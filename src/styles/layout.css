@@ -1,0 +1,93 @@
+#app-container {
+    display: grid;
+    grid-template-columns: var(--left-panel-width) 1fr var(--right-panel-width);
+    grid-template-rows: var(--header-height) 1fr;
+    grid-template-areas:
+        "header header header"
+        "left-panel main-view right-panel";
+    height: 100vh;
+    width: 100vw;
+    transition: grid-template-columns 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+    /* Prevent the container itself from growing */
+}
+
+#app-container.left-collapsed {
+    grid-template-columns: 0px 1fr var(--right-panel-width);
+}
+
+#app-container.right-collapsed.left-collapsed {
+    grid-template-columns: 0px 1fr 0px;
+}
+
+#app-container.right-collapsed {
+    /* Always keep 3 column structure to prevent implicit grid chaos */
+    grid-template-columns: var(--left-panel-width) 1fr 0px;
+}
+
+.header-region {
+    grid-area: header;
+    z-index: 1000;
+}
+
+.left-panel-region {
+    grid-area: left-panel;
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    z-index: 10;
+    min-height: 0;
+    /* CRITICAL: Allows flex child to overflow/scroll */
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), padding 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+}
+
+.left-collapsed .left-panel-region {
+    width: 0;
+    padding: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.main-view-region {
+    grid-area: main-view;
+    position: relative;
+    overflow: visible; /* CRITICAL: Allow HUD/Timeline to overlap sidebars */
+    z-index: 20; /* Gain priority over side-panels (z-index: 10) */
+}
+
+.right-panel-region {
+    grid-area: right-panel;
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    z-index: 10;
+    min-height: 0;
+    /* CRITICAL: Allows flex child to overflow/scroll */
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), padding 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+}
+
+.right-collapsed .right-panel-region {
+    width: 0;
+    padding: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}

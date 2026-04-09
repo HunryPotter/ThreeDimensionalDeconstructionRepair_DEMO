@@ -1,0 +1,57 @@
+/* Global Design Tokens aligned with prototype */
+:root {
+  /* Colors */
+  --bg-industrial: #F0F2F5;
+  --header-bg: #1E293B;
+  --panel-bg: #FFFFFF;
+  --border-color: #D1D5DB;
+  
+  --primary-blue: #0052D9;
+  --primary-blue-hover: #003ea1;
+  
+  --status-critical: #D9001B;
+  --status-success: #2BA471;
+  --status-general: #808080;
+  
+  --text-main: #1f2937;
+  --text-secondary: #6b7280;
+  
+  /* Dimensions */
+  --header-height: 64px;
+  --left-panel-width: 320px;
+  --right-panel-width: 350px;
+  
+  /* Shadows & Transitions */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --transition-fast: 0.2s ease;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body, html {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  font-family: 'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--text-main);
+  background-color: var(--bg-industrial);
+  overflow: hidden;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+  transition: var(--transition-fast);
+}
+
+ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
