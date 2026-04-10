@@ -741,6 +741,76 @@ export class RecordSidebar {
     });
   }
 
+  handleAtaExport() {
+    const startTs = new Date(this.dateRange.start).getTime();
+    const endTs = new Date(this.dateRange.end).getTime();
+
+    // Use the exact same filtering logic as renderAtaGroups
+    const filteredItems = this.markerData.filter(item => {
+      const matchesSearch = item.id.toLowerCase().includes(this.searchQuery.toLowerCase()) || (item.title && item.title.toLowerCase().includes(this.searchQuery.toLowerCase()));
+      const { type: aircraftTypeFilter, airline, ata, partNo } = this.activeFilters;
+      const matchesBreadcrumbType = !aircraftTypeFilter || aircraftTypeFilter.includes('全部型别') || aircraftTypeFilter.includes(item.aircraftType);
+      const matchesBreadcrumbAirline = !airline || airline.includes('全部航司') || airline.includes(item.airline);
+      const matchesBreadcrumbAta = !ata || ata.includes('全部ATA') || ata.includes(item.ataCode);
+      const matchesBreadcrumbPartNo = !partNo || item.id.toLowerCase().includes(partNo.toLowerCase()) || item.title.toLowerCase().includes(partNo.toLowerCase());
+
+      const matchesType = this.selectedTypeLabels.length === 0 || item.typeLabels.some(l => this.selectedTypeLabels.includes(l));
+      const manualStatus = item.srRecord ? item.srRecord.manualStatus : 'none';
+      const matchesManual = this.selectedManualStatuses.includes(manualStatus);
+      const itemTs = new Date(item.date).getTime();
+      const matchesDate = itemTs >= startTs && itemTs <= endTs;
+
+      const isEditing = this.editingId === item.id;
+      return !isEditing && matchesSearch && matchesBreadcrumbType && matchesBreadcrumbAirline && matchesBreadcrumbAta && matchesBreadcrumbPartNo && (item.isUserMarkup || (matchesType && matchesManual && matchesDate)) && (!this.filter3D || item.has3D);
+    });
+
+    if (filteredItems.length === 0) {
+      alert('当前列表无数据可导出');
+      return;
+    }
+
+    // Prepare CSV Content
+    const headers = ['损伤编号', '名称', '发现日期', 'ATA章节', '子分段', '损伤类型', '评估状态', '架次', '航司', '有无3D', 'X坐标(%)', 'Y坐标(%)'];
+    
+    const escapeCSV = (val) => {
+      const str = String(val === null || val === undefined ? '' : val);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const rows = filteredItems.map(item => [
+      item.id,
+      item.title || '无名称',
+      item.date,
+      item.ataLabel,
+      item.subBranch || '通用分段',
+      item.typeLabels.join(' & '),
+      item.srRecord ? (item.srRecord.manualStatus === 'published' ? '已发布' : '未发布') : '无',
+      item.aircraftType,
+      item.airline,
+      item.has3D ? '有' : '无',
+      item.coords?.x ? item.coords.x.toFixed(1) : '-',
+      item.coords?.y ? item.coords.y.toFixed(1) : '-'
+    ]);
+
+    const csvContent = [headers, ...rows].map(row => row.map(escapeCSV).join(',')).join('\n');
+    
+    // Add UTF-8 BOM for Excel compatibility
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    
+    const timestamp = new Date().toISOString().split('T')[0];
+    link.setAttribute('href', url);
+    link.setAttribute('download', `ATA_Damage_Records_${timestamp}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
   initEvents() {
     // 1. Sidebar Toggle Handle (Universal)
     const toggleHandle = this.container.querySelector('#btn-left-sidebar-toggle');
@@ -820,6 +890,14 @@ export class RecordSidebar {
           this.activeFilters.partNo = '';
           this.render();
           window.dispatchEvent(new CustomEvent('filter-change', { detail: this.activeFilters }));
+        });
+      }
+
+      const exportBtn = this.container.querySelector('#btn-export-tree');
+      if (exportBtn) {
+        exportBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.handleAtaExport();
         });
       }
 
