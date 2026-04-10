@@ -353,7 +353,7 @@ export class RecordSidebar {
       <div class="sidebar-container">
         <!-- Sidebar Header -->
         <div class="sidebar-header-title" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 2px solid rgba(0,0,0,0.04);">
-          <strong style="font-size: 14px; color: #1e293b;">MSN & 注册号检索</strong>
+          <strong style="font-size: 14px; color: #1e293b;">筛选看板</strong>
         </div>
         
         <!-- Filters -->
