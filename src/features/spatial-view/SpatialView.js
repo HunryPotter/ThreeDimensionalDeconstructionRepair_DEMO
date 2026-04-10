@@ -18,7 +18,13 @@ export class SpatialView {
       <div id="canvas-container">
         <!-- Global Breadcrumbs -->
         <div id="global-breadcrumbs" class="breadcrumb-nav">
-          <span class="crumb">全部架次</span>
+          <span class="crumb">全部 MSN & 注册号</span>
+        </div>
+
+        <!-- Top Instruction Banner -->
+        <div id="spatial-banner" class="spatial-banner" style="display: none;">
+          <span class="banner-icon">ℹ️</span>
+          <span class="banner-text">请点击模型选择位置</span>
         </div>
 
         <!-- 3D Scene Marker -->
@@ -39,9 +45,6 @@ export class SpatialView {
             </div>
         </div>
 
-        <!-- Floating Global Actions (Empty, replaced by timeline header action) -->
-        <div class="floating-actions" id="global-actions" style="display: none !important;"></div>
-
         <!-- Timeline Component -->
         <div id="spatial-timeline" class="spatial-timeline">
           <div class="timeline-header">
@@ -60,6 +63,7 @@ export class SpatialView {
           </div>
           <div class="timeline-main">
             <div class="timeline-visual-track">
+              <!-- Markers are now INSIDE the track to ensure vertical alignment -->
               <div id="timeline-markers-container" class="markers-layer"></div>
               <div class="track-line"></div>
             </div>
@@ -100,65 +104,72 @@ export class SpatialView {
                 </div>
               </div>
             </div>
-            <!-- Quick ranges disabled as requested
-            <div class="calendar-quick-ranges">
-              <div class="range-chip" data-start="2026-01-01" data-end="2026-04-01">Q1 全季度</div>
-              <div class="range-chip" data-start="2026-01-01" data-end="2026-01-31">一月</div>
-              <div class="range-chip" data-start="2026-02-01" data-end="2026-02-28">二月</div>
-            </div>
-            -->
           </div>
           <div class="calendar-footer">
             <button class="btn-reset-calendar">重置</button>
             <button class="btn-apply-calendar primary">确认检索</button>
           </div>
         </div>
-      </div>
-
-      <!-- Spatial Navigation Tools (Level 2 Only) -->
-      <div class="spatial-nav-tools" id="spatial-filters" style="display: none;">
-        <div class="spatial-filter-group">
-          ${this.renderSpatialDropdown('frame', '框位', ['FR1', 'FR15', 'FR32', 'FR56', 'FR88'])}
-          ${this.renderSpatialDropdown('station', '站位', ['STA280', 'STA450', 'STA620', 'STA840'])}
-          ${this.renderSpatialDropdown('stringer', '长桁', ['STR1', 'STR12', 'STR24', 'STR38'])}
+        
+        <!-- Delete Confirmation Popup -->
+        <div id="delete-confirm-popup" class="confirm-dialog danger" style="display: none;">
+          <div class="confirm-header">移除三维标记</div>
+          <div class="confirm-body">
+            <p class="warning-text">该操作将从模型及列表中永久移除此标记。确定要继续吗？</p>
+          </div>
+          <div class="confirm-footer">
+            <button id="btn-delete-cancel" class="btn-confirm secondary">取消</button>
+            <button id="btn-delete-confirm" class="btn-confirm primary">确认删除</button>
+          </div>
         </div>
-      </div>
 
-      <!-- Toolbar Dock (Vertical & Abstract) -->
-      <div class="toolbar-dock">
-        <div class="dock-item" title="选择">⬚</div>
-        <div class="dock-item" title="平移">⬚</div>
-        <div class="dock-item" title="旋转">⬚</div>
-        <div class="dock-divider"></div>
-        <div class="dock-item" title="辅助线">⬚</div>
-        <div class="dock-item" title="设置">⬚</div>
-        <div class="dock-divider"></div>
-        <div class="dock-item" id="btn-measure" title="测量">📏</div>
-        <div class="dock-item" id="btn-struct-toggle" title="点击切换飞机内部框位、站位及长桁结构的显隐状态，辅助精确定位损伤位置。">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-            <line x1="12" y1="22.08" x2="12" y2="12"></line>
-          </svg>
+        <!-- Drawing Confirmation Popup -->
+        <div id="confirm-popup" class="confirm-dialog" style="display: none;">
+          <div class="confirm-header">保存标记位置</div>
+          <div class="confirm-body">
+            <div id="local-markup-input-group" class="input-group" style="display: none;">
+              <label>标记名称</label>
+              <input type="text" id="markup-name-input" placeholder="输入标记名称..." class="tech-input">
+            </div>
+            <div class="coord-info">
+              <div class="coord-row">
+                <span class="coord-label">SPATIAL COORDINATES</span>
+                <span id="confirm-coords" class="coord-value">( 0.0, 0.0, 0.0 )</span>
+              </div>
+            </div>
+          </div>
+          <div class="confirm-footer">
+            <button id="btn-confirm-no" class="btn-confirm secondary">取消</button>
+            <button id="btn-confirm-yes" class="btn-confirm primary">保存标点</button>
+          </div>
         </div>
-      </div>
-      
-      <!-- System Announcement Banner -->
-      <div id="spatial-banner" class="spatial-banner" style="display: none;">
-        <span class="banner-icon">ℹ</span>
-        <span class="banner-text">请点击模型进行标记</span>
-      </div>
 
-      <!-- Secondary Confirmation Popup -->
-      <div id="confirm-popup" class="confirm-dialog" style="display: none;">
-        <div class="confirm-header">标记完成是否确认</div>
-        <div class="confirm-content">
-          <div class="coord-label">标记位坐标:</div>
-          <div id="confirm-coords" class="coord-value">( 0.0, 0.0, 0.0 )</div>
+        <!-- Spatial Navigation Tools (Level 2 Only) -->
+        <div class="spatial-nav-tools" id="spatial-filters" style="display: none;">
+          <div class="spatial-filter-group">
+            ${this.renderSpatialDropdown('frame', '框位', ['FR1', 'FR15', 'FR32', 'FR56', 'FR88'])}
+            ${this.renderSpatialDropdown('station', '站位', ['STA280', 'STA450', 'STA620', 'STA840'])}
+            ${this.renderSpatialDropdown('stringer', '长桁', ['STR1', 'STR12', 'STR24', 'STR38'])}
+          </div>
         </div>
-        <div class="confirm-footer">
-          <button id="btn-confirm-no" class="btn-confirm">否</button>
-          <button id="btn-confirm-yes" class="btn-confirm primary">是</button>
+
+        <!-- Toolbar Dock (Vertical & Abstract) -->
+        <div class="toolbar-dock">
+          <div class="dock-item" title="选择">⬚</div>
+          <div class="dock-item" title="平移">⬚</div>
+          <div class="dock-item" title="旋转">⬚</div>
+          <div class="dock-divider"></div>
+          <div class="dock-item" title="辅助线">⬚</div>
+          <div class="dock-item" title="设置">⬚</div>
+          <div class="dock-divider"></div>
+          <div class="dock-item" id="btn-measure" title="测量">📏</div>
+          <div class="dock-item" id="btn-struct-toggle" title="点击切换飞机内部框位、站位及长桁结构的显隐状态，辅助精确定位损伤位置。">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+              <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            </svg>
+          </div>
         </div>
       </div>
     `;
@@ -178,7 +189,7 @@ export class SpatialView {
     });
 
     window.addEventListener('filter-reset', () => {
-      this.updateBreadcrumbs({ type: ['全部型别'], airline: ['全部航司'], tail: ['全部架次'] });
+      this.updateBreadcrumbs({ type: ['全部型别'], airline: ['全部航司'], msn: ['全部MSN'], registration: ['全部注册号'] });
     });
 
     // Handle Dropdown Selection via Change Event (Source of Truth)
@@ -317,8 +328,11 @@ export class SpatialView {
       // 2. Render Sub-markers (Individual records)
       if (data.isExisting && data.records && data.records.length > 0) {
         data.records.forEach((rec, index) => {
+          const isUserMarkup = rec.isUserMarkup;
           const subMarker = document.createElement('div');
-          subMarker.className = `hotspot sub-marker marker-existing ${rec.id === window.app?.leftSidebar?.selectedSrId ? 'selected' : ''}`;
+          const isSelected = rec.id === window.app?.leftSidebar?.selectedMarkerId;
+          subMarker.className = `hotspot sub-marker ${isUserMarkup ? 'marker-user' : 'marker-existing'} ${isSelected ? 'selected' : ''}`;
+          subMarker.dataset.id = rec.id;
 
           // Calculate individual expansion angle
           const angle = (360 / data.records.length) * index;
@@ -329,12 +343,12 @@ export class SpatialView {
           subMarker.innerHTML = `
             <div class="glow-ring ring-1"></div>
             <div class="glow-ring ring-2"></div>
-            <div class="dot-core">${rec.typeIcon || '⊞'}</div>
+            <div class="dot-core">${isUserMarkup ? '' : (rec.typeIcon || '⊞')}</div>
           `;
 
           subMarker.addEventListener('click', (e) => {
             e.stopPropagation();
-            window.dispatchEvent(new CustomEvent('sr-reverse-select', {
+            window.dispatchEvent(new CustomEvent('damage-marker-reverse-select', {
               detail: { id: rec.id, allIds: data.records.map(r => r.id) }
             }));
           });
@@ -344,12 +358,17 @@ export class SpatialView {
 
       // 3. Render the Main Site Marker (The "Anchor")
       const mainMarker = document.createElement('div');
-      const markerTypeClass = data.isExisting ? 'marker-existing' : 'marker-new';
+      let markerTypeClass = 'marker-new';
+      if (data.isExisting) {
+         const hasUserMarkup = data.records.some(r => r.isUserMarkup);
+         markerTypeClass = hasUserMarkup && data.records.length === 1 ? 'marker-user' : 'marker-existing';
+      }
       mainMarker.className = `hotspot main-marker ${markerTypeClass} ${data.isSelected ? 'selected' : ''}`;
 
       // Main marker shows the "lead" icon or a count
       const isNumeric = data.isExisting && data.typeIcon && !isNaN(parseInt(data.typeIcon));
-      const iconHtml = (data.isExisting && data.typeIcon) ? `<div class="dot-core ${isNumeric ? 'numeric' : ''}">${data.typeIcon}</div>` : `<div class="dot-core"></div>`;
+      const showIcon = (data.isExisting && data.typeIcon && markerTypeClass !== 'marker-user');
+      const iconHtml = showIcon ? `<div class="dot-core ${isNumeric ? 'numeric' : ''}">${data.typeIcon}</div>` : `<div class="dot-core"></div>`;
       const countBadge = (data.isExisting && data.records.length > 1) ? `<div class="site-count">${data.records.length}</div>` : '';
 
       mainMarker.innerHTML = `
@@ -364,7 +383,7 @@ export class SpatialView {
         e.stopPropagation();
         window.dispatchEvent(new CustomEvent('site-click', { detail: data }));
         // Default behavior: select the first record
-        window.dispatchEvent(new CustomEvent('sr-reverse-select', {
+        window.dispatchEvent(new CustomEvent('damage-marker-reverse-select', {
           detail: {
             id: data.isExisting ? data.records[0].id : data.id,
             allIds: data.isExisting ? data.records.map(r => r.id) : [data.id]
@@ -475,16 +494,22 @@ export class SpatialView {
   }
 
   initDrawingEvents() {
-    window.addEventListener('enter-drawing-mode', () => {
+    window.addEventListener('enter-drawing-mode', (e) => {
       // Deactivate measuring mode if active
       if (this.isMeasuringMode) this.toggleMeasurementMode();
 
       this.isDrawingMode = true;
-      this.showBanner('请点击模型进行标记');
-      this.container.querySelector('#spatial-scene-container').classList.add('drawing-active');
+      this.drawingModeType = e.detail?.mode || 'external-request';
+      this.editingMarkerId = e.detail?.editingId || null;
+      this.editingInitialTitle = e.detail?.initialTitle || '';
 
-      // Hide timeline if it was shown
-      this.renderTimeline(this.currentTab || 'SR', []);
+      const bannerText = this.editingMarkerId ? '请点击模型重新定位标记' : '请点击模型进行标记';
+      this.showBanner(bannerText);
+      const sceneEl = this.container.querySelector('#spatial-scene-container');
+      sceneEl.classList.add('drawing-active');
+
+      // Hide timeline via CSS (.scene-container.drawing-active ~ .spatial-timeline { display: none !important })
+      // Do NOT call renderTimeline with [] here — that wipes timeline dots needlessly.
     });
 
     // Global Exit for all interaction modes (Marking, Measuring, etc.)
@@ -497,8 +522,16 @@ export class SpatialView {
         sceneContainer.classList.remove('measuring-active');
       }
       this.hideBanner();
-      // Re-trigger timeline rendering to restore visibility (USING ACTUAL TAB)
-      this.renderTimeline(this.currentTab, []);
+      // Restore timeline visibility without clearing markers: just show the element.
+      // RecordSidebar will fire 'records-updated' to repopulate markers.
+      const timeline = this.container.querySelector('#spatial-timeline');
+      const canvasContainer = this.container.querySelector('#canvas-container');
+      const isDrillDown = canvasContainer && (canvasContainer.classList.contains('drilldown-active') || (window.app && window.app.viewLevel === 2));
+      if (isDrillDown && timeline) {
+        timeline.style.display = 'flex';
+        // Ask RecordSidebar to re-emit current records so timeline dots are repopulated
+        window.dispatchEvent(new CustomEvent('refresh-timeline-data'));
+      }
     });
 
     const sceneContainer = this.container.querySelector('#spatial-scene-container');
@@ -531,14 +564,35 @@ export class SpatialView {
       `;
       sceneContainer.appendChild(this.newMarker);
 
-      // Show confirmation dialog at click position or center
+      // Configure confirmation dialog based on mode
       const confirmPopup = this.container.querySelector('#confirm-popup');
       const coordDisplay = confirmPopup.querySelector('#confirm-coords');
+      const inputGroup = confirmPopup.querySelector('#local-markup-input-group');
+      const confirmHeader = confirmPopup.querySelector('.confirm-header');
+      const markupInput = confirmPopup.querySelector('#markup-name-input');
+      const btnConfirmYes = confirmPopup.querySelector('#btn-confirm-yes');
+      
+      if (this.drawingModeType === 'local-component') {
+        inputGroup.style.display = 'flex';
+        confirmHeader.textContent = this.editingMarkerId ? '重新定位并编辑标记' : '新增三维零部件标记';
+        btnConfirmYes.textContent = '确认保存';
+        if (markupInput) {
+           markupInput.value = this.editingInitialTitle || '';
+           setTimeout(() => markupInput.focus(), 50);
+        }
+      } else {
+        inputGroup.style.display = 'none';
+        confirmHeader.textContent = '标记完成是否确认';
+        btnConfirmYes.textContent = '是';
+      }
+
       // Simulated 3D coords based on 2D percentages
       const simX = (x * 5.5).toFixed(1);
       const simY = (y * 2.2).toFixed(1);
       const simZ = (Math.random() * 50).toFixed(1);
       coordDisplay.textContent = `( ${simX}, ${simY}, ${simZ} )`;
+      this.currentMarkupCoords = { x, y };
+      
       confirmPopup.style.display = 'block';
       this.hideBanner(); // Hide guidance when confirming
     });
@@ -559,9 +613,45 @@ export class SpatialView {
       this.container.querySelector('#confirm-popup').style.display = 'none';
       this.hideBanner();
 
-      // Dispatch event to show popup and jump
-      window.dispatchEvent(new CustomEvent('confirm-technical-request'));
+      // Fix: Only clean up temporary drawing marker if it's a local component 
+      // (because local components are re-rendered from source data immediately).
+      // For technical requests from CASE, we keep the marker as a persistent visual reference.
+      if (this.newMarker) {
+        if (this.drawingModeType === 'local-component') {
+          this.newMarker.remove();
+          this.newMarker = null;
+        } else {
+          // Keep the marker but stop the ripple animation
+          this.newMarker.classList.remove('selected');
+        }
+      }
+
+      if (this.drawingModeType === 'local-component') {
+        const nameInput = this.container.querySelector('#markup-name-input');
+        const nameVal = nameInput ? (nameInput.value.trim() || '自定义零部件标记') : '自定义零部件标记';
+        
+        window.dispatchEvent(new CustomEvent('save-user-markup', {
+           detail: {
+             title: nameVal,
+             x: this.currentMarkupCoords?.x || 50,
+             y: this.currentMarkupCoords?.y || 50,
+             editingId: this.editingMarkerId
+           }
+        }));
+        this.editingMarkerId = null;
+        this.editingInitialTitle = '';
+      } else {
+        // Dispatch event to show popup and jump
+        window.dispatchEvent(new CustomEvent('confirm-technical-request'));
+      }
     });
+  }
+
+  clearTemporaryMarker() {
+    if (this.newMarker) {
+      this.newMarker.remove();
+      this.newMarker = null;
+    }
   }
 
   initSpatialEvents() {
@@ -570,6 +660,13 @@ export class SpatialView {
       const canvasContainer = this.container.querySelector('#canvas-container');
       if (canvasContainer) canvasContainer.classList.add('drilldown-active');
       this.resetSpatialFilters();
+      
+      // Make timeline visible immediately via CSS (drilldown-active class).
+      // Do NOT call renderTimeline with empty array here — that would wipe existing
+      // timeline dots. The 'records-updated' event (fired by RecordSidebar.dispatchDataUpdate)
+      // will populate the markers right after this synchronously.
+      const timeline = this.container.querySelector('#spatial-timeline');
+      if (timeline) timeline.style.display = 'flex';
     });
 
     const btnRequest = this.container.querySelector('#btn-initiate-request');
@@ -598,15 +695,22 @@ export class SpatialView {
     });
 
     // Bidirectional Selection Sync: Listen for selections from Sidebar or 3D scene
-    ['sr-reverse-select', 'sr-select', 'crs-select'].forEach(evtName => {
+    ['sr-reverse-select', 'sr-select', 'crs-select', 'damage-marker-select', 'damage-marker-reverse-select'].forEach(evtName => {
       window.addEventListener(evtName, (e) => {
         const sidebar = window.app?.leftSidebar;
 
-        // Highlight timeline markers based on ALL active selection IDs (SR and CRS)
+        // Highlight timeline markers based on ALL active selection IDs
         this.container.querySelectorAll('.timeline-record-marker').forEach(m => {
           const id = m.dataset.id;
-          const isSelected = (id === sidebar?.selectedSrId) || (id === sidebar?.selectedCrsId);
+          const isSelected = (id === sidebar?.selectedMarkerId);
           m.classList.toggle('selected', isSelected);
+        });
+
+        // Highlight 3D sub-markers as well
+        this.container.querySelectorAll('.sub-marker').forEach(sm => {
+          const id = sm.dataset.id;
+          const isSelected = (id === sidebar?.selectedMarkerId);
+          sm.classList.toggle('selected', isSelected);
         });
       });
     });
@@ -696,6 +800,28 @@ export class SpatialView {
       });
     }
 
+    // Custom Delete Confirmation Interaction
+    const deletePopup = this.container.querySelector('#delete-confirm-popup');
+    window.addEventListener('request-delete-markup', (e) => {
+      this.pendingDeleteId = e.detail.id;
+      if (deletePopup) deletePopup.style.display = 'block';
+    });
+
+    this.container.querySelector('#btn-delete-cancel').addEventListener('click', () => {
+      this.pendingDeleteId = null;
+      if (deletePopup) deletePopup.style.display = 'none';
+    });
+
+    this.container.querySelector('#btn-delete-confirm').addEventListener('click', () => {
+      if (this.pendingDeleteId) {
+        window.dispatchEvent(new CustomEvent('confirm-delete-action', {
+          detail: { id: this.pendingDeleteId }
+        }));
+      }
+      this.pendingDeleteId = null;
+      if (deletePopup) deletePopup.style.display = 'none';
+    });
+
     // Global click to close calendar
     document.addEventListener('click', (e) => {
       if (calPopup && calPopup.style.display === 'flex' && !e.target.closest('#calendar-popup')) {
@@ -735,6 +861,65 @@ export class SpatialView {
     document.addEventListener('click', () => {
       this.container.querySelectorAll('.spatial-dropdown').forEach(d => d.classList.remove('open'));
     });
+    window.addEventListener('locate-spatial-marker', (e) => {
+      this.showRetrievalGuide(e.detail);
+    });
+  }
+
+  showRetrievalGuide(marker) {
+    const svg = this.container.querySelector('#leader-line-svg');
+    const path = this.container.querySelector('#leader-line-path');
+    const scene = this.container.querySelector('#spatial-scene-container');
+    if (!svg || !path || !scene) return;
+
+    // 1. Calculate target point (marker on aircraft) based on percentage coords
+    const rect = scene.getBoundingClientRect();
+    const targetX = (marker.x / 100) * rect.width;
+    const targetY = (marker.y / 100) * rect.height;
+
+    // 2. Start point (approximated from the sidebar region on the left)
+    const startX = -300; // Deeper entry point to ensure it looks like it comes from the sidebar
+    const startY = targetY; // Horizontal alignment for cleaner start
+
+    // 3. Define path: M (Start) Q (Control Point) (End)
+    // Create a smooth curve that "searches" for the point
+    const controlX = targetX * 0.4;
+    const d = `M ${startX} ${startY} Q ${controlX} ${startY}, ${targetX} ${targetY}`;
+    
+    path.setAttribute('d', d);
+    path.style.display = 'block';
+    
+    // Use total length for dash animation
+    const pathLength = path.getTotalLength() || 1000;
+    path.style.strokeDasharray = pathLength;
+    path.style.strokeDashoffset = pathLength;
+    path.style.opacity = '1';
+
+    // 4. Animate drawing the line
+    path.animate([
+      { strokeDashoffset: pathLength },
+      { strokeDashoffset: '0' }
+    ], {
+      duration: 700,
+      easing: 'cubic-bezier(0.19, 1, 0.22, 1)',
+      fill: 'forwards'
+    });
+
+    // 5. Fade out effect after some time
+    if (this._guideTimeout) clearTimeout(this._guideTimeout);
+    this._guideTimeout = setTimeout(() => {
+      const fade = path.animate([
+        { opacity: 1 },
+        { opacity: 0 }
+      ], {
+        duration: 800,
+        fill: 'forwards'
+      });
+      fade.onfinish = () => {
+        path.style.display = 'none';
+        path.setAttribute('d', '');
+      };
+    }, 2500);
   }
 
   renderTimeline(tab, records) {
@@ -746,11 +931,13 @@ export class SpatialView {
     const canvasContainer = this.container.querySelector('#canvas-container');
     const sceneContainer = this.container.querySelector('#spatial-scene-container');
 
-    const isDrillDown = canvasContainer && canvasContainer.classList.contains('drilldown-active');
+    const isDrillDown = canvasContainer && (canvasContainer.classList.contains('drilldown-active') || (window.app && window.app.viewLevel === 2));
     const isMarking = sceneContainer && (sceneContainer.classList.contains('drawing-active') || sceneContainer.classList.contains('measuring-active'));
 
-    if (isDrillDown && tab !== 'CR' && !isMarking) {
+    // Persistent: Always show in Level 2 unless in marking mode
+    if (isDrillDown && !isMarking) {
       timeline.style.display = 'flex';
+      // If records are empty, still show the axis (don't return early)
     } else {
       timeline.style.display = 'none';
       return;
@@ -758,7 +945,12 @@ export class SpatialView {
 
     const markersContainer = this.container.querySelector('#timeline-markers-container');
     const axisContainer = this.container.querySelector('.timeline-axis');
+    const rangeLabel = this.container.querySelector('#date-range-label');
     if (!markersContainer || !axisContainer) return;
+
+    if (rangeLabel) {
+      rangeLabel.textContent = `${this.dateRange.start} - ${this.dateRange.end}`;
+    }
 
     // 1. Update Scaling Logic based on current dateRange
     markersContainer.innerHTML = '';
@@ -776,7 +968,8 @@ export class SpatialView {
 
       const marker = document.createElement('div');
       marker.className = 'timeline-record-marker';
-      marker.style.left = `${pos}%`;
+      // Use calc to account for 40px side padding:
+      marker.style.left = `calc(40px + (100% - 80px) * ${pos / 100})`;
       marker.dataset.id = record.id;
       marker.title = `${record.id} (${record.date})`;
       if (record.has3D) marker.classList.add('has-3d');
@@ -788,9 +981,7 @@ export class SpatialView {
 
       // Auto-highlight if already selected
       const sidebar = window.app?.leftSidebar;
-      const isSelected = (record.id === sidebar?.selectedSrId) ||
-        (record.id === sidebar?.selectedCrsId) ||
-        (record.srId && record.srId === sidebar?.selectedSrId);
+      const isSelected = (record.id === sidebar?.selectedMarkerId);
 
       if (isSelected) {
         marker.classList.add('selected');
@@ -798,7 +989,7 @@ export class SpatialView {
 
       marker.addEventListener('click', (e) => {
         e.stopPropagation();
-        window.dispatchEvent(new CustomEvent('sr-reverse-select', {
+        window.dispatchEvent(new CustomEvent('damage-marker-reverse-select', {
           detail: { id: record.id }
         }));
       });
@@ -813,40 +1004,46 @@ export class SpatialView {
   updateTimelineAxis(container, startTs, endTs) {
     container.innerHTML = '';
     const diffDays = (endTs - startTs) / (1000 * 60 * 60 * 24);
+    const range = endTs - startTs;
 
-    // Simple heuristic for axis labels: 
-    // - If < 60 days, show weeks or start/mid/end days
-    // - If > 60 days, show months
     if (diffDays <= 60) {
-      const numSteps = 4;
+      const numSteps = Math.min(6, Math.max(2, Math.floor(diffDays / 7))); // Dynamic ticks for short range
       for (let i = 0; i <= numSteps; i++) {
-        const date = new Date(startTs + (endTs - startTs) * (i / numSteps));
-        const span = document.createElement('span');
-        span.textContent = `${date.getMonth() + 1}/${date.getDate()}`;
-        container.appendChild(span);
+        const date = new Date(startTs + range * (i / numSteps));
+        const pos = (i / numSteps) * 100;
+        
+        const tickWrap = document.createElement('div');
+        tickWrap.className = 'axis-tick-wrap';
+        tickWrap.style.left = `calc(40px + (100% - 80px) * ${pos / 100})`;
+        tickWrap.innerHTML = `
+          <div class="axis-tick"></div>
+          <span class="axis-label">${date.getMonth() + 1}/${date.getDate()}</span>
+        `;
+        container.appendChild(tickWrap);
       }
     } else {
-      // Show months covered
-      const startMonth = new Date(startTs).getMonth();
-      const endMonth = new Date(endTs).getMonth();
-      const startYear = new Date(startTs).getFullYear();
-      const endYear = new Date(endTs).getFullYear();
-
       const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+      const startD = new Date(startTs);
+      
+      // Improve: Iterate exactly through month starts visible in the range
+      let d = new Date(startD.getFullYear(), startD.getMonth(), 1);
+      
+      while (d.getTime() <= endTs) {
+        const monthStartTs = d.getTime();
+        const pos = ((monthStartTs - startTs) / range) * 100;
 
-      let currentYear = startYear;
-      let currentMonth = startMonth;
-
-      while (currentYear < endYear || (currentYear === endYear && currentMonth <= endMonth)) {
-        const span = document.createElement('span');
-        span.textContent = months[currentMonth];
-        container.appendChild(span);
-
-        currentMonth++;
-        if (currentMonth > 11) {
-          currentMonth = 0;
-          currentYear++;
+        // Display month label if it's within a slightly padded view (to catch labels on edges)
+        if (pos >= -5 && pos <= 105) {
+          const tickWrap = document.createElement('div');
+          tickWrap.className = 'axis-tick-wrap';
+          tickWrap.style.left = `calc(40px + (100% - 80px) * ${Math.max(0, Math.min(100, pos)) / 100})`;
+          tickWrap.innerHTML = `
+            <div class="axis-tick"></div>
+            <span class="axis-label">${months[d.getMonth()]}</span>
+          `;
+          container.appendChild(tickWrap);
         }
+        d.setMonth(d.getMonth() + 1);
       }
     }
   }
@@ -897,22 +1094,25 @@ export class SpatialView {
     const filters = {
       type: data.type || ['全部型别'],
       airline: data.airline || ['全部航司'],
-      tail: data.tail || ['全部架次']
+      msn: data.msn || ['全部MSN'],
+      registration: data.registration || ['全部注册号']
     };
 
     // Ensure they are arrays
-    ['type', 'airline', 'tail'].forEach(key => {
+    ['type', 'airline', 'msn', 'registration'].forEach(key => {
       if (!Array.isArray(filters[key])) filters[key] = [filters[key]];
     });
 
     const options = {
       type: ['全部型别', '基本型', '高原型'],
       airline: ['全部航司', '中国东航', '中国国航', '南方航空'],
-      tail: ['全部架次', 'B919M']
+      msn: ['全部MSN', '10025', '10026'],
+      registration: ['全部注册号', 'B919M', 'B919A']
     };
 
     const formatLabel = (key, selected) => {
-      if (selected.length === 1 && (selected[0] === '全部型别' || selected[0] === '全部航司' || selected[0] === '全部架次')) {
+      const allPrefix = key === 'type' ? '全部型别' : key === 'airline' ? '全部航司' : key === 'msn' ? '全部MSN' : '全部注册号';
+      if (selected.length === 1 && selected[0] === allPrefix) {
         return selected[0];
       }
       if (selected.length === 1) return selected[0];
@@ -921,12 +1121,13 @@ export class SpatialView {
 
     const renderCrumb = (key, selected) => {
       const label = formatLabel(key, selected);
+      const keyLabel = key === 'type' ? '型别' : key === 'airline' ? '航司' : key === 'msn' ? 'MSN号' : '注册号';
       return `
         <div class="crumb-container" data-key="${key}">
           <span class="crumb">${label}</span>
           <div class="crumb-dropdown">
             <div class="dropdown-header">
-              <span>选择${key === 'type' ? '型别' : key === 'airline' ? '航司' : '机号'}</span>
+              <span>选择${keyLabel}</span>
               <button class="btn-clear" data-key="${key}">重置</button>
             </div>
             ${options[key].map(opt => {
@@ -948,8 +1149,62 @@ export class SpatialView {
       <span class="separator">></span>
       ${renderCrumb('airline', filters.airline)}
       <span class="separator">></span>
-      ${renderCrumb('tail', filters.tail)}
+      ${renderCrumb('msn', filters.msn)}
+      <span class="separator">></span>
+      ${renderCrumb('registration', filters.registration)}
     `;
+
+    // Re-bind breadcrumb events (since we just rewrote the HTML)
+    breadcrumbEl.querySelectorAll('.crumb-container').forEach(crumb => {
+      crumb.addEventListener('mouseenter', () => crumb.classList.add('open'));
+      crumb.addEventListener('mouseleave', () => crumb.classList.remove('open'));
+    });
+
+    // Handle clearing the dropdown
+    breadcrumbEl.querySelectorAll('.btn-clear').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const key = btn.dataset.key;
+        const allValue = key === 'type' ? '全部型别' : key === 'airline' ? '全部航司' : key === 'msn' ? '全部MSN' : '全部注册号';
+        filters[key] = [allValue];
+        
+        window.dispatchEvent(new CustomEvent('filter-change', {
+          detail: filters
+        }));
+        
+        this.updateBreadcrumbs(filters);
+      });
+    });
+
+    // Handle individual item selection in dropdowns
+    breadcrumbEl.querySelectorAll('.dropdown-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const key = item.closest('.crumb-container').dataset.key;
+        const val = item.dataset.value;
+        const allValue = key === 'type' ? '全部型别' : key === 'airline' ? '全部航司' : key === 'msn' ? '全部MSN' : '全部注册号';
+        
+        let selected = [...filters[key]];
+        if (val === allValue) {
+          selected = [allValue];
+        } else {
+          // Remove "all" if it exists
+          selected = selected.filter(s => s !== allValue);
+          if (selected.includes(val)) {
+            selected = selected.filter(s => s !== val);
+            if (selected.length === 0) selected = [allValue];
+          } else {
+            selected.push(val);
+          }
+        }
+        
+        filters[key] = selected;
+        window.dispatchEvent(new CustomEvent('filter-change', {
+          detail: filters
+        }));
+        this.updateBreadcrumbs(filters);
+      });
+    });
   }
 
   addStyles() {
@@ -1163,6 +1418,7 @@ export class SpatialView {
         display: flex;
         justify-content: center;
         align-items: center;
+        overflow: visible; /* Allow leader lines to extend outwards */
       }
       
       .background-aircraft {
@@ -1183,7 +1439,8 @@ export class SpatialView {
         width: 100%;
         height: 100%;
         pointer-events: none;
-        z-index: 5;
+        z-index: 10000; /* Ensure it stays on top of markers */
+        overflow: visible;
       }
       
       /* Hotspots */
@@ -1253,6 +1510,16 @@ export class SpatialView {
       }
       
       .hotspot:hover .tooltip { opacity: 1; }
+      
+      .hotspot.marker-new .ring-1 { border-color: rgba(59, 130, 246, 0.5); border-width: 1px; }
+      .hotspot.marker-new .ring-2 { border-color: rgba(59, 130, 246, 0.2); }
+      .hotspot.marker-new .dot-core { background: #3b82f6; box-shadow: 0 0 10px rgba(59, 130, 246, 0.6); }
+
+      .hotspot.marker-user .ring-1 { border-color: rgba(173, 255, 47, 0.4); border-width: 1px; }
+      .hotspot.marker-user .ring-2 { border-color: rgba(173, 255, 47, 0.2); }
+      .hotspot.marker-user .dot-core { background: #adff2f; box-shadow: 0 0 10px rgba(173, 255, 47, 0.8), 0 0 20px rgba(173, 255, 47, 0.4); }
+
+      .hotspot.marker-measure .ring-1 { display: none; }
       
       .hotspot .dot-core {
         width: 11px; /* Reduced from 14px */
@@ -1556,10 +1823,9 @@ export class SpatialView {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 4px;
+        padding: 0; /* REMOVED PADDING TO ALIGN WITH TRACK EDGES */
         position: relative;
-        z-index: 11002; /* Stay above markers and lines */
-        pointer-events: none; /* Allow underlying track to be interactive where buttons are NOT present */
+        margin-bottom: 4px;
       }
 
       .timeline-header > * {
@@ -1688,18 +1954,39 @@ export class SpatialView {
       }
 
       .timeline-axis {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 12px;
-        padding: 0 10px;
+        position: relative;
+        height: 30px;
+        margin-top: 8px;
+        padding: 0; /* Align perfectly with track */
       }
 
-      .timeline-axis span {
+      .axis-tick-wrap {
+        position: absolute;
+        top: 0;
+        transform: translateX(-50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .axis-tick {
+        width: 1px;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.2);
+      }
+
+      .axis-label {
         font-size: 10px;
         color: #64748b;
         font-weight: 700;
         font-family: 'Inter', sans-serif;
         letter-spacing: 0.5px;
+      }
+
+      /* Disable timeline and block marker clicks in Marking Interface */
+      .drawing-active .hotspot, .measuring-active .hotspot {
+        pointer-events: none !important;
       }
 
       /* Drilldown visibility logic */
@@ -1722,15 +2009,6 @@ export class SpatialView {
       }
       
       .spatial-timeline { pointer-events: auto; }
-
-      .timeline-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0; /* REMOVED PADDING TO ALIGN WITH TRACK EDGES */
-        position: relative;
-        margin-bottom: 4px;
-      }
 
       .header-left, .header-right {
         flex: 1;
@@ -1884,74 +2162,165 @@ export class SpatialView {
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        width: 240px;
-        background: white;
-        border-radius: 8px;
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0,0,0,0.05);
-        z-index: 2000;
-        animation: scaleUp 0.2s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+        width: 320px;
+        background: rgba(255, 255, 255, 0.72);
+        backdrop-filter: blur(24px) saturate(160%);
+        -webkit-backdrop-filter: blur(24px) saturate(160%);
+        border-radius: 16px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255,255,255,0.4);
+        z-index: 2500;
+        overflow: hidden;
+        animation: popupIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        display: flex;
+        flex-direction: column;
       }
 
-      @keyframes scaleUp {
-        from { transform: translate(-50%, -50%) scale(0.9); opacity: 0; }
-        to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+      @keyframes popupIn {
+        from { opacity: 0; transform: translate(-50%, -45%) scale(0.9); }
+        to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
       }
 
       .confirm-header {
-        padding: 12px;
-        font-size: 13px;
-        font-weight: 600;
-        color: #1e293b;
-        text-align: center;
-        border-bottom: 1px solid #f1f5f9;
+        padding: 20px 24px 12px;
+        font-size: 15px;
+        font-weight: 700;
+        color: #0f172a;
+        letter-spacing: -0.01em;
       }
 
-      .confirm-content {
-        padding: 16px;
-        text-align: center;
+      .confirm-body {
+        padding: 0 24px 24px;
+      }
+
+      .warning-text {
+        font-size: 13px;
+        color: #64748b;
+        line-height: 1.6;
+        margin: 0;
+      }
+
+      .input-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 20px;
+      }
+
+      .input-group label {
+        font-size: 11px;
+        font-weight: 600;
+        color: #94a3b8;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      .tech-input {
+        width: 100%;
+        padding: 10px 12px;
+        background: rgba(248, 250, 252, 0.8);
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        font-family: inherit;
+        font-size: 13px;
+        color: #0f172a;
+        outline: none;
+        transition: all 0.2s;
+      }
+
+      .tech-input:focus {
+        border-color: #3b82f6;
+        background: #ffffff;
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+      }
+
+      .coord-info {
+        background: rgba(241, 245, 249, 0.5);
+        padding: 12px 16px;
+        border-radius: 10px;
+        border: 1px dashed rgba(0, 0, 0, 0.05);
+      }
+
+      .coord-row {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
       }
 
       .coord-label {
-        font-size: 10px;
+        font-size: 9px;
+        font-weight: 700;
         color: #94a3b8;
-        margin-bottom: 4px;
+        letter-spacing: 0.1em;
       }
 
       .coord-value {
-        font-family: 'JetBrains Mono', monospace;
+        font-family: 'JetBrains Mono', 'Roboto Mono', monospace;
         font-size: 12px;
-        color: #3b82f6;
+        color: #1e3a8a;
         font-weight: 600;
       }
 
       .confirm-footer {
+        padding: 16px 24px 24px;
         display: flex;
-        border-top: 1px solid #f1f5f9;
+        gap: 12px;
+        background: rgba(248, 250, 252, 0.3);
       }
 
       .btn-confirm {
         flex: 1;
-        padding: 10px;
-        border: none;
-        background: none;
-        font-size: 12px;
-        color: #64748b;
+        padding: 10px 0;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 600;
         cursor: pointer;
-        transition: 0.2s;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
 
-      .btn-confirm:hover {
-        background: #f8fafc;
+      .btn-confirm.secondary {
+        background: #f1f5f9;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
+      }
+
+      .btn-confirm.secondary:hover {
+        background: #e2e8f0;
+        color: #1e293b;
       }
 
       .btn-confirm.primary {
-        color: #3b82f6;
-        font-weight: 600;
-        border-left: 1px solid #f1f5f9;
+        background: #0052d9;
+        color: white;
+        border: none;
+        box-shadow: 0 4px 12px rgba(0, 82, 217, 0.16);
       }
 
       .btn-confirm.primary:hover {
-        background: rgba(59, 130, 246, 0.05);
+        background: #0045b8;
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(0, 82, 217, 0.24);
+      }
+
+      /* Danger Theme Overrides */
+      .confirm-dialog.danger {
+        box-shadow: 0 20px 60px rgba(217, 0, 27, 0.08), 0 0 0 1px rgba(255,255,255,0.4);
+      }
+
+      .confirm-dialog.danger .confirm-header {
+        color: #d9001b;
+      }
+
+      .confirm-dialog.danger .btn-confirm.primary {
+        background: #d9001b;
+        box-shadow: 0 4px 12px rgba(217, 0, 27, 0.16);
+      }
+
+      .confirm-dialog.danger .btn-confirm.primary:hover {
+        background: #b90017;
+        box-shadow: 0 6px 16px rgba(217, 0, 27, 0.24);
       }
 
       .calendar-popup {

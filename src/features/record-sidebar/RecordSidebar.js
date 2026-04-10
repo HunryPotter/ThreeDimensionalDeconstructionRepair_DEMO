@@ -22,6 +22,22 @@ export class RecordSidebar {
       partNo: ''
     };
 
+    // Bidirectional Sync: Listen for filter changes from breadcrumbs
+    window.addEventListener('filter-change', (e) => {
+      // Avoid infinite loop by checking if data is different
+      const newData = e.detail;
+      let changed = false;
+      Object.keys(newData).forEach(key => {
+        if (this.activeFilters[key] !== undefined && JSON.stringify(this.activeFilters[key]) !== JSON.stringify(newData[key])) {
+          this.activeFilters[key] = newData[key];
+          changed = true;
+        }
+      });
+      if (changed) {
+        this.render();
+      }
+    });
+
     // Pre-defined spatial sites for grouping (all on fuselage)
     this.spatialSites = [
       { id: 'site-01', x: 28, y: 45 }, { id: 'site-02', x: 35, y: 52 },
@@ -36,6 +52,7 @@ export class RecordSidebar {
 
     this.activeTab = 'ata-view'; // 'ata-view', 'spatial-view'
     this.selectedMarkerId = null;
+    this.selectedTreeNodeId = null;
 
     // Virtual Database (Mock Data)
     const damageTypes = ['凹坑', '裂纹', '腐蚀', '划伤', '磨损', '紧固件松动或缺损', '脱胶', '剥离', '穿孔', '缺损', '雷击', '金属腐蚀', '复合材料/分层', '其他'];
@@ -64,7 +81,11 @@ export class RecordSidebar {
         for (let i = 0; i < 15; i++) {
           const suffix = (markerCounter++).toString().padStart(4, '0');
           const markerId = `M-${suffix}`;
-          
+
+          const ata = atas[Math.floor(Math.random() * atas.length)];
+          const branches = ['G20', 'G40', 'G50', '通用分段'];
+          const subBranch = branches[Math.floor(Math.random() * branches.length)];
+
           let numTypes = Math.random() > 0.8 ? 2 : 1;
           const selectedLabels = [];
           const tempTypes = [...damageTypes];
@@ -73,7 +94,6 @@ export class RecordSidebar {
             selectedLabels.push(tempTypes.splice(idx, 1)[0]);
           }
 
-          const ata = atas[Math.floor(Math.random() * atas.length)];
           const has3D = Math.random() > 0.3;
           let siteCoords = null;
           let siteId = null;
@@ -82,7 +102,7 @@ export class RecordSidebar {
             siteId = site.id;
             siteCoords = { x: site.x, y: site.y };
           }
-          
+
           const manualRoll = Math.random();
           const manualStatus = manualRoll > 0.6 ? 'published' : (manualRoll > 0.3 ? 'unpublished' : 'none');
 
@@ -125,6 +145,7 @@ export class RecordSidebar {
             airline: airline,
             ataCode: ata.code,
             ataLabel: ata.label,
+            subBranch: subBranch,
             has3D: has3D,
             siteId: siteId,
             coords: siteCoords,
@@ -144,17 +165,28 @@ export class RecordSidebar {
 
   selectRecord(id) {
     this.selectedMarkerId = id || null;
+    this.selectedTreeNodeId = id || null;
     this.render();
   }
 
   render() {
+    // 1. Save scroll position of the table container if it exists
+    const scrollContainer = this.container.querySelector('.table-container');
+    const savedScrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
+
     if (this.view === 'selection') {
       this.renderSelectionView();
     } else {
       this.renderDrillDownView();
     }
     this.dispatchDataUpdate();
-    this.initEvents(); // Binds local DOM events for current view
+    this.initEvents();
+
+    // 2. Restore scroll position
+    const newScrollContainer = this.container.querySelector('.table-container');
+    if (newScrollContainer && savedScrollTop > 0) {
+      newScrollContainer.scrollTop = savedScrollTop;
+    }
   }
 
   dispatchDataUpdate() {
@@ -168,13 +200,17 @@ export class RecordSidebar {
       const matchesBreadcrumbAirline = !airline || airline.includes('全部航司') || airline.includes(item.airline);
       const matchesBreadcrumbAta = !ata || ata.includes('全部ATA') || ata.includes(item.ataCode);
       const matchesBreadcrumbPartNo = !partNo || item.id.toLowerCase().includes(partNo.toLowerCase()) || item.title.toLowerCase().includes(partNo.toLowerCase());
-      
+
       const matchesType = this.selectedTypeLabels.length === 0 || item.typeLabels.some(l => this.selectedTypeLabels.includes(l));
-      const matchesManual = this.selectedManualStatuses.includes(item.srRecord.manualStatus);
+      const manualStatus = item.srRecord ? item.srRecord.manualStatus : 'none';
+      const matchesManual = this.selectedManualStatuses.includes(manualStatus);
       const itemTs = new Date(item.date).getTime();
       const matchesDate = itemTs >= startTs && itemTs <= endTs;
-      
-      return matchesSearch && matchesBreadcrumbType && matchesBreadcrumbAirline && matchesBreadcrumbAta && matchesBreadcrumbPartNo && matchesType && matchesManual && matchesDate && (!this.filter3D || item.has3D);
+
+      // Exclude marker currently being edited
+      const isEditing = this.editingId === item.id;
+
+      return !isEditing && matchesSearch && matchesBreadcrumbType && matchesBreadcrumbAirline && matchesBreadcrumbAta && matchesBreadcrumbPartNo && (item.isUserMarkup || (matchesType && matchesManual && matchesDate)) && (!this.filter3D || item.has3D);
     });
 
     window.dispatchEvent(new CustomEvent('records-updated', {
@@ -220,6 +256,90 @@ export class RecordSidebar {
       this.dateRange = e.detail;
       this.render();
     });
+
+    // 4. Save User Markup
+    window.addEventListener('save-user-markup', (e) => {
+      const detail = e.detail;
+      const targetNodeId = this.selectedTreeNodeId;
+      const editingId = detail.editingId;
+
+      if (!targetNodeId && !editingId) {
+        alert("请先在左侧选择一个ATA章节或分段");
+        return;
+      }
+
+      let ataCode = '32';
+      let ataLabel = 'ATA 32(起落架)'; // Default
+      let subBranch = '通用分段';
+
+      if (targetNodeId && targetNodeId.includes('-')) {
+        const parts = targetNodeId.split('-');
+        ataCode = parts[0];
+        subBranch = parts[1];
+      } else if (targetNodeId) {
+        ataCode = targetNodeId;
+      }
+
+      // If editing, find the marker to update
+      if (editingId) {
+        const existingMarker = this.markerData.find(m => m.id === editingId);
+        if (existingMarker) {
+          existingMarker.title = detail.title;
+          existingMarker.coords = { x: detail.x, y: detail.y };
+          // Keep same ID, date, ATA branch etc.
+          this.editingId = null;
+          this.selectedMarkerId = editingId;
+          this.render();
+          return;
+        }
+      }
+
+      // Find the label for ataCode
+      const existing = this.markerData.find(m => m.ataCode === ataCode);
+      if (existing) ataLabel = existing.ataLabel;
+
+      const newId = `U-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      const newMarker = {
+        id: newId,
+        title: detail.title || '自定义零部件标记',
+        typeLabels: [],
+        aircraftType: '基本型',
+        airline: '中国东航',
+        ataCode: ataCode,
+        ataLabel: ataLabel,
+        subBranch: subBranch,
+        has3D: true,
+        siteId: `site-user-${newId}`,
+        coords: { x: detail.x, y: detail.y },
+        date: new Date().toISOString().split('T')[0],
+        srRecord: null,
+        crsRecords: [],
+        crRecords: [],
+        isUserMarkup: true
+      };
+
+      this.markerData.push(newMarker);
+      this.selectedTreeNodeId = newId;
+      this.render();
+    });
+
+    // 5. Handle Custom Delete Confirmation
+    window.addEventListener('confirm-delete-action', (e) => {
+      const id = e.detail.id;
+      this.markerData = this.markerData.filter(m => m.id !== id);
+      if (this.selectedMarkerId === id) {
+        this.selectedMarkerId = null;
+        if (window.app) window.app.toggleRightPanel(false);
+      }
+      this.render();
+      this.dispatchDataUpdate(); // Ensure timeline and other views sync immediately
+    });
+
+    // 6. Refresh timeline data on demand (e.g. after exiting marking/measuring mode)
+    window.addEventListener('refresh-timeline-data', () => {
+      this.dispatchDataUpdate();
+    });
   }
 
   renderSelectionView() {
@@ -232,57 +352,46 @@ export class RecordSidebar {
     this.container.innerHTML = `
       <div class="sidebar-container">
         <!-- Sidebar Header -->
-        <div class="sidebar-header-title">
-          <strong>架次列表</strong>
-          <button class="btn-toggle-sidebar left" id="btn-collapse-left" title="收起面板">◀</button>
+        <div class="sidebar-header-title" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 2px solid rgba(0,0,0,0.04);">
+          <strong style="font-size: 14px; color: #1e293b;">MSN & 注册号检索</strong>
         </div>
         
         <!-- Filters -->
         <div class="filter-section">
-          <div class="filter-row">
-            <span class="label">型别选择</span>
-            <select id="type-select">
-              <option ${isSelected('type', '全部型别') ? 'selected' : ''}>全部型别</option>
-              <option ${isSelected('type', '基本型') ? 'selected' : ''}>基本型</option>
-              <option ${isSelected('type', '高原型') ? 'selected' : ''}>高原型</option>
-            </select>
-          </div>
-          <div class="filter-row">
-            <span class="label">航司选择</span>
-            <select id="airline-select">
-              <option ${isSelected('airline', '全部航司') ? 'selected' : ''}>全部航司</option>
-              <option ${isSelected('airline', '中国东航') ? 'selected' : ''}>中国东航</option>
-              <option ${isSelected('airline', '中国国航') ? 'selected' : ''}>中国国航</option>
-              <option ${isSelected('airline', '南方航空') ? 'selected' : ''}>南方航空</option>
-            </select>
-          </div>
-          <div class="filter-row">
-            <span class="label">MSN号</span>
-            <select id="msn-select">
-              <option ${isSelected('msn', '全部MSN') ? 'selected' : ''}>全部MSN</option>
-              <option ${isSelected('msn', '10025') ? 'selected' : ''}>10025</option>
-              <option ${isSelected('msn', '10026') ? 'selected' : ''}>10026</option>
-            </select>
-          </div>
-          <div class="filter-row">
-            <span class="label">注册号</span>
-            <select id="registration-select">
-              <option ${isSelected('registration', '全部注册号') ? 'selected' : ''}>全部注册号</option>
-              <option ${isSelected('registration', 'B919M') ? 'selected' : ''}>B919M</option>
-              <option ${isSelected('registration', 'B919A') ? 'selected' : ''}>B919A</option>
-            </select>
-          </div>
-          <div class="filter-row">
-            <span class="label">ATA章节</span>
-            <select id="ata-select">
-              <option ${isSelected('ata', '全部ATA') ? 'selected' : ''}>全部ATA</option>
-              <option ${isSelected('ata', '32') ? 'selected' : ''}>ATA 32(起落架)</option>
-              <option ${isSelected('ata', '52') ? 'selected' : ''}>ATA 52(舱门)</option>
-              <option ${isSelected('ata', '53') ? 'selected' : ''}>ATA 53(机身)</option>
-              <option ${isSelected('ata', '55') ? 'selected' : ''}>ATA 55(安定面)</option>
-              <option ${isSelected('ata', '57') ? 'selected' : ''}>ATA 57(机翼)</option>
-            </select>
-          </div>
+          ${this.renderDropdownField('type', '型别选择', [
+      { label: '全部型别', value: '全部型别' },
+      { label: '基本型', value: '基本型' },
+      { label: '高原型', value: '高原型' }
+    ], this.activeFilters.type)}
+
+          ${this.renderDropdownField('airline', '航司选择', [
+      { label: '全部航司', value: '全部航司' },
+      { label: '中国东航', value: '中国东航' },
+      { label: '中国国航', value: '中国国航' },
+      { label: '南方航空', value: '南方航空' }
+    ], this.activeFilters.airline)}
+
+          ${this.renderDropdownField('msn', 'MSN号查询', [
+      { label: '全部MSN', value: '全部MSN' },
+      { label: '10025', value: '10025' },
+      { label: '10026', value: '10026' }
+    ], this.activeFilters.msn)}
+
+          ${this.renderDropdownField('registration', '注册号查询', [
+      { label: '全部注册号', value: '全部注册号' },
+      { label: 'B919M', value: 'B919M' },
+      { label: 'B919A', value: 'B919A' }
+    ], this.activeFilters.registration)}
+
+          ${this.renderDropdownField('ata', 'ATA章节', [
+      { label: '全部ATA', value: '全部ATA' },
+      { label: '32', value: '32' },
+      { label: '52', value: '52' },
+      { label: '53', value: '53' },
+      { label: '55', value: '55' },
+      { label: '57', value: '57' }
+    ], this.activeFilters.ata)}
+
           <div class="filter-row">
             <span class="label">件号查询</span>
             <input type="text" id="part-no-input" placeholder="输入件号模糊搜索" value="${this.activeFilters.partNo || ''}" class="sidebar-input">
@@ -317,22 +426,26 @@ export class RecordSidebar {
           <div class="footer-stats">共 30 条</div>
           <div class="footer-actions">
             <button class="btn-reset">重置</button>
-            <button class="btn-confirm">确认</button>
+            <button class="btn-confirm" id="btn-overview-confirm">确认</button>
           </div>
         </div>
+
+        <!-- Panel Toggle Bookmark (Right Edge, Middle) -->
+        <button class="btn-toggle-handle" id="btn-left-sidebar-toggle" title="隐藏/显示面板">
+          <span class="handle-icon">◀</span>
+        </button>
       </div>
     `;
   }
 
-  renderDrillDownView() {
-    const renderMultiSelect = (id, label, options, selectedValues) => {
-      const selectedText = selectedValues.length === 0 || selectedValues.includes('all') || selectedValues.includes('全部ATA') || selectedValues.includes('全部类型')
-        ? '全部'
-        : selectedValues.length === 1 ? selectedValues[0] : `已选 ${selectedValues.length} 项`;
-        
-      const isOpen = this.openDropdownId === id;
-      
-      return `
+  renderDropdownField(id, label, options, selectedValues) {
+    const selectedText = selectedValues.length === 0 || selectedValues.includes('all') || selectedValues.includes('全部ATA') || selectedValues.includes('全部类型') || selectedValues.includes('全部型别') || selectedValues.includes('全部航司') || selectedValues.includes('全部MSN') || selectedValues.includes('全部注册号')
+      ? '全部'
+      : selectedValues.length === 1 ? selectedValues[0] : `${selectedValues[0]} 等${selectedValues.length}项`;
+
+    const isOpen = this.openDropdownId === id;
+
+    return `
         <div class="filter-row" style="position: relative; z-index: ${isOpen ? 2000 : 1};">
           <span class="label">${label}</span>
           <div class="custom-dropdown" data-id="${id}" style="width: 150px; position: relative; margin: 0; box-sizing: border-box;">
@@ -352,45 +465,53 @@ export class RecordSidebar {
           </div>
         </div>
       `;
-    };
+  }
 
+  renderDrillDownView() {
     this.container.innerHTML = `
       <div class="sidebar-container">
-        <div class="sidebar-header-title" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;">
-          <strong>损伤标记列表 (B919)</strong>
-          <button class="btn-toggle-sidebar left" id="btn-collapse-left-drill" title="收起面板">◀</button>
+        <div class="sidebar-header-title" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 2px solid rgba(0,0,0,0.04);">
+          <strong style="font-size: 14px; color: #1e293b;">损伤标记列表 (B919)</strong>
+          <div class="header-actions" style="display: flex; gap: 4px; align-items: center;">
+            <button class="icon-btn-view" id="btn-drill-reset-icon" title="重置筛选" style="width: 24px; height: 24px; padding: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.03); border-radius: 4px; border: 1px solid rgba(0,0,0,0.05); cursor: pointer; color: #64748b;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            </button>
+            <button class="icon-btn-view" id="btn-export-tree" title="ATA结构树导出" style="width: 24px; height: 24px; padding: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.03); border-radius: 4px; border: 1px solid rgba(0,0,0,0.05); cursor: pointer; color: #64748b;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            </button>
+          </div>
         </div>
         
         <!-- Tabs Section -->
         <div class="tab-section">
-          <div class="tab-item ${this.activeTab === 'ata-view' ? 'active' : ''}" data-tab="ata-view">ATA分类</div>
-          <div class="tab-item ${this.activeTab === 'spatial-view' ? 'active' : ''}" data-tab="spatial-view">空间站位</div>
+          <div class="tab-item ${this.activeTab === 'ata-view' ? 'active' : ''}" data-tab="ata-view">ATA结构树</div>
+          <div class="tab-item ${this.activeTab === 'spatial-view' ? 'active' : ''}" data-tab="spatial-view">框站位参照系</div>
         </div>
 
         ${this.activeTab === 'ata-view' ? `
         <!-- Search & Tools Section -->
         <div class="search-tool-area filter-section" style="padding: 12px 16px; border-bottom: 1px solid rgba(0,0,0,0.06); margin-bottom: 4px; background: rgba(245,245,245,0.3);">
           
-          ${renderMultiSelect('drill-manual-filter', '超手册评估', [
-            { label: '全部状态', value: 'all' },
-            { label: '已发布', value: 'published' },
-            { label: '未发布', value: 'unpublished' },
-            { label: '无状态', value: 'none' }
-          ], this.selectedManualStatuses.length === 3 ? ['all'] : this.selectedManualStatuses)}
+          ${this.renderDropdownField('drill-manual-filter', '超手册评估', [
+      { label: '全部状态', value: 'all' },
+      { label: '已发布', value: 'published' },
+      { label: '未发布', value: 'unpublished' },
+      { label: '无状态', value: 'none' }
+    ], this.selectedManualStatuses.length === 3 ? ['all'] : this.selectedManualStatuses)}
           
-          ${renderMultiSelect('drill-type-filter', '损伤分类', [
-            { label: '全部类型', value: '全部类型' },
-            ...['凹坑', '裂纹', '腐蚀', '划伤', '磨损', '紧固件松动或缺损', '脱胶', '剥离', '穿孔', '缺损', '雷击', '金属腐蚀', '复合材料/分层', '其他'].map(t => ({ label: t, value: t }))
-          ], this.selectedTypeLabels.length === 0 ? ['全部类型'] : this.selectedTypeLabels)}
+          ${this.renderDropdownField('drill-type-filter', '损伤分类', [
+      { label: '全部类型', value: '全部类型' },
+      ...['凹坑', '裂纹', '腐蚀', '划伤', '磨损', '紧固件松动或缺损', '脱胶', '剥离', '穿孔', '缺损', '雷击', '金属腐蚀', '复合材料/分层', '其他'].map(t => ({ label: t, value: t }))
+    ], this.selectedTypeLabels.length === 0 ? ['全部类型'] : this.selectedTypeLabels)}
 
-          ${renderMultiSelect('drill-ata-filter', 'ATA章节', [
-            { label: '全部ATA', value: '全部ATA' },
-            { label: 'ATA 32', value: '32' },
-            { label: 'ATA 52', value: '52' },
-            { label: 'ATA 53', value: '53' },
-            { label: 'ATA 55', value: '55' },
-            { label: 'ATA 57', value: '57' }
-          ], this.activeFilters.ata)}
+          ${this.renderDropdownField('drill-ata-filter', 'ATA章节', [
+      { label: '全部ATA', value: '全部ATA' },
+      { label: 'ATA 32', value: '32' },
+      { label: 'ATA 52', value: '52' },
+      { label: 'ATA 53', value: '53' },
+      { label: 'ATA 55', value: '55' },
+      { label: 'ATA 57', value: '57' }
+    ], this.activeFilters.ata)}
           
           <div class="filter-row">
             <span class="label">件号模糊</span>
@@ -399,15 +520,6 @@ export class RecordSidebar {
             </div>
           </div>
           
-          <!-- Action Icons Row -->
-          <div style="display: flex; justify-content: flex-end; gap: 8px; padding-top: 8px; margin-top: 4px; border-top: 1px dashed rgba(0,0,0,0.1); align-items: center;">
-            <button class="icon-btn-view" id="btn-draw-markup" title="三维损伤标记" style="width: 28px; height: 28px; padding: 0;">
-              <span style="font-size: 14px;">🖌️</span>
-            </button>
-            <button class="icon-btn-view" id="btn-export-tree" title="ATA结构树导出" style="width: 28px; height: 28px; padding: 0;">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            </button>
-          </div>
         </div>
         
         <div class="table-container tree-view-container">
@@ -420,9 +532,16 @@ export class RecordSidebar {
         <div class="sidebar-footer">
           <div class="footer-actions">
             <button class="btn-back-footer">返回</button>
-            <button class="btn-reset">重置</button>
+            <button class="btn-confirm" id="btn-draw-markup-footer" style="display: flex; align-items: center; justify-content: center; gap: 6px;">
+              <span style="font-size: 14px;">🖌️</span> 三维标记
+            </button>
           </div>
         </div>
+        
+        <!-- Panel Toggle Bookmark (Right Edge, Middle) -->
+        <button class="btn-toggle-handle" id="btn-left-sidebar-toggle" title="隐藏/显示面板">
+          <span class="handle-icon">◀</span>
+        </button>
       </div>
     `;
 
@@ -457,62 +576,106 @@ export class RecordSidebar {
       const matchesBreadcrumbAirline = !airline || airline.includes('全部航司') || airline.includes(item.airline);
       const matchesBreadcrumbAta = !ata || ata.includes('全部ATA') || ata.includes(item.ataCode);
       const matchesBreadcrumbPartNo = !partNo || item.id.toLowerCase().includes(partNo.toLowerCase()) || item.title.toLowerCase().includes(partNo.toLowerCase());
-      
+
       const matchesType = this.selectedTypeLabels.length === 0 || item.typeLabels.some(l => this.selectedTypeLabels.includes(l));
-      const matchesManual = this.selectedManualStatuses.includes(item.srRecord.manualStatus);
+      const manualStatus = item.srRecord ? item.srRecord.manualStatus : 'none';
+      const matchesManual = this.selectedManualStatuses.includes(manualStatus);
       const itemTs = new Date(item.date).getTime();
       const matchesDate = itemTs >= startTs && itemTs <= endTs;
 
-      return matchesSearch && matchesBreadcrumbType && matchesBreadcrumbAirline && matchesBreadcrumbAta && matchesBreadcrumbPartNo && matchesType && matchesManual && matchesDate && (!this.filter3D || item.has3D);
+      // Exclude marker currently being edited
+      const isEditing = this.editingId === item.id;
+
+      return !isEditing && matchesSearch && matchesBreadcrumbType && matchesBreadcrumbAirline && matchesBreadcrumbAta && matchesBreadcrumbPartNo && (item.isUserMarkup || (matchesType && matchesManual && matchesDate)) && (!this.filter3D || item.has3D);
     });
 
     const ataGroups = {};
     filteredItems.forEach(item => {
       if (!ataGroups[item.ataCode]) {
-        ataGroups[item.ataCode] = { label: item.ataLabel, items: [] };
+        ataGroups[item.ataCode] = { label: item.ataLabel, branches: {} };
       }
-      ataGroups[item.ataCode].items.push(item);
+
+      const branchName = item.subBranch || '通用分段';
+      if (!ataGroups[item.ataCode].branches[branchName]) {
+        ataGroups[item.ataCode].branches[branchName] = { label: branchName, items: [] };
+      }
+      ataGroups[item.ataCode].branches[branchName].items.push(item);
     });
 
     this.uncheckedMarkerIds = this.uncheckedMarkerIds || new Set();
-
     this.collapsedAtaGroups = this.collapsedAtaGroups || new Set();
+    this.selectedTreeNodeId = this.selectedTreeNodeId || null;
 
     return Object.entries(ataGroups).sort((a, b) => a[0].localeCompare(b[0])).map(([code, group]) => {
-      const allChecked = group.items.length > 0 && group.items.every(item => !this.uncheckedMarkerIds.has(item.id));
       const isExpanded = !this.collapsedAtaGroups.has(code);
-      
+      const branchesArr = Object.values(group.branches);
+      const totalItems = branchesArr.reduce((sum, b) => sum + b.items.length, 0);
+      const groupHasChecked = totalItems > 0 && branchesArr.some(b => b.items.some(item => !this.uncheckedMarkerIds.has(item.id)));
+
       return `
       <div class="ata-group ${isExpanded ? 'expanded' : ''}">
-        <div class="ata-header" data-ata="${code}">
-          <input type="checkbox" class="ata-branch-checkbox" style="margin-right: 6px; cursor: pointer;" ${allChecked ? 'checked' : ''} />
+        <div class="ata-header ${this.selectedTreeNodeId === code ? 'selected' : ''}" data-node-id="${code}">
+          <input type="checkbox" class="ata-branch-checkbox" style="margin-right: 6px; cursor: pointer;" ${groupHasChecked ? 'checked' : ''} />
           <span class="chevron" style="margin-right: 4px;">${isExpanded ? '▼' : '▶'}</span>
           <span class="ata-code">${group.label}</span>
-          <span class="record-count">${group.items.length}</span>
+          <span class="record-count">${totalItems}</span>
         </div>
         <div class="ata-content">
-          ${group.items.map(item => {
-            const isSelected = item.id === this.selectedMarkerId;
+          ${Object.entries(group.branches).sort((a, b) => a[0].localeCompare(b[0])).map(([branchName, branch]) => {
+        const branchId = `${code}-${branchName}`;
+        const isBranchExpanded = !this.collapsedAtaGroups.has(branchId);
+        const branchHasChecked = branch.items.length > 0 && branch.items.some(item => !this.uncheckedMarkerIds.has(item.id));
+
+        return `
+             <div class="ata-sub-branch ${isBranchExpanded ? 'expanded' : ''}">
+                <div class="ata-sub-header ${this.selectedTreeNodeId === branchId ? 'selected' : ''}" data-node-id="${branchId}">
+                  <input type="checkbox" class="ata-branch-checkbox" style="margin-right: 6px; cursor: pointer;" ${branchHasChecked ? 'checked' : ''} />
+                  <span class="chevron" style="margin-right: 4px;">${isBranchExpanded ? '▼' : '▶'}</span>
+                  <span class="branch-name">${branch.label}</span>
+                  <span class="record-count" style="margin-left: auto; font-size: 10px; color: #94a3b8;">${branch.items.length}</span>
+                </div>
+                <div class="ata-sub-content">
+                  ${branch.items.map(item => {
+          const isSelected = item.id === this.selectedMarkerId;
+          const isTreeSelected = item.id === this.selectedTreeNodeId;
+          const isUserMarkup = item.isUserMarkup;
+
+          let actionsHtml = '';
+          if (isUserMarkup) {
+            actionsHtml = `
+               <span class="icon-delete" style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; font-size: 11px; cursor: pointer;" title="删除标记">🗑️</span>
+               <span class="icon-edit" style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; font-size: 11px; cursor: pointer;" title="重新标点">📝</span>
+               <span class="icon-pin ${this.filter3D ? 'active' : ''}" style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; font-size: 11px;" title="自定义零部件标记">✏️</span>
+            `;
+          } else {
             const msStatus = item.srRecord ? item.srRecord.manualStatus : 'none';
             const msConfig = {
               'published': { icon: '📝', color: '#ea580c', label: '已发布' },
               'unpublished': { icon: '📄', color: '#94a3b8', label: '未发布' },
               'none': { icon: '📄', color: '#94a3b8', label: '无状态', opacity: 0.5 }
             }[msStatus] || { icon: '📄', color: '#cbd5e1', label: '未知', opacity: 0.5 };
-            
-            return `
-              <div class="record-item ${isSelected ? 'selected' : ''}" data-id="${item.id}">
-                <div style="display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0;">
-                   <span class="record-id" style="font-weight: bold;">${item.id}</span>
-                   <span style="font-size: 10px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px;">${item.title}</span>
+
+            actionsHtml = `
+              <span class="icon-manual" style="display: inline-flex; align-items: center; justify-content: center; border-radius: 2px; width: 16px; height: 16px; color: ${msConfig.color}; font-size: 11px; cursor: help; opacity: ${msConfig.opacity || 1};" title="超手册评估记录: ${msConfig.label}">${msConfig.icon}</span>
+              <span class="icon-grid" style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; font-size: 14px; color: #64748b;" title="${item.typeLabels.length > 1 ? `混合损伤: ${item.typeLabels.join(', ')}` : `类型: ${item.typeLabels[0]}`} ">${item.typeLabels.length > 1 ? '⧉' : (iconMap[item.typeLabels[0]] || '⊞')}</span>
+              ${item.has3D ? `<span class="icon-pin ${this.filter3D ? 'active' : ''}" style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; font-size: 11px;" title="三维标记">📍</span>` : '<span class="icon-placeholder" style="display: inline-block; width: 16px; height: 16px;"></span>'}
+            `;
+          }
+
+          return `
+                    <div class="record-item ${isSelected || isTreeSelected ? 'selected' : ''}" data-id="${item.id}">
+                      <div style="display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0;">
+                         <span class="record-id" style="font-weight: bold; color: ${isUserMarkup ? '#adff2f' : ''}">${item.id}</span>
+                         <span style="font-size: 10px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px;">${item.title}</span>
+                      </div>
+                      <div class="record-actions" style="display: flex; align-items: center; gap: 6px; justify-content: flex-end;">
+                        ${actionsHtml}
+                      </div>
+                    </div>`;
+        }).join('')}
                 </div>
-                <div class="record-actions" style="display: flex; align-items: center; gap: 6px; justify-content: flex-end;">
-                  <span class="icon-manual" style="display: inline-flex; align-items: center; justify-content: center; border-radius: 2px; width: 16px; height: 16px; color: ${msConfig.color}; font-size: 11px; cursor: help; opacity: ${msConfig.opacity || 1};" title="超手册评估记录: ${msConfig.label}">${msConfig.icon}</span>
-                  <span class="icon-grid" style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; font-size: 14px; color: #64748b;" title="${item.typeLabels.length > 1 ? `混合损伤: ${item.typeLabels.join(', ')}` : `类型: ${item.typeLabels[0]}`} ">${item.typeLabels.length > 1 ? '⧉' : (iconMap[item.typeLabels[0]] || '⊞')}</span>
-                  ${item.has3D ? `<span class="icon-pin ${this.filter3D ? 'active' : ''}" style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; font-size: 11px;" title="三维标记">📍</span>` : '<span class="icon-placeholder" style="display: inline-block; width: 16px; height: 16px;"></span>'}
-                </div>
-              </div>`;
-          }).join('')}
+             </div>`;
+      }).join('')}
         </div>
       </div>
     `}).join('');
@@ -536,16 +699,17 @@ export class RecordSidebar {
       const matchesBreadcrumbAirline = !airline || airline.includes('全部航司') || airline.includes(item.airline);
       const matchesBreadcrumbAta = !ata || ata.includes('全部ATA') || ata.includes(item.ataCode);
       const matchesBreadcrumbPartNo = !partNo || item.id.toLowerCase().includes(partNo.toLowerCase()) || item.title.toLowerCase().includes(partNo.toLowerCase());
-      
+
       const matchesType = this.selectedTypeLabels.length === 0 || item.typeLabels.some(l => this.selectedTypeLabels.includes(l));
-      const matchesManual = this.selectedManualStatuses.includes(item.srRecord.manualStatus);
+      const manualStatus = item.srRecord ? item.srRecord.manualStatus : 'none';
+      const matchesManual = this.selectedManualStatuses.includes(manualStatus);
       const itemTs = new Date(item.date).getTime();
       const matchesDate = itemTs >= startTs && itemTs <= endTs;
 
       this.uncheckedMarkerIds = this.uncheckedMarkerIds || new Set();
       const isChecked = !this.uncheckedMarkerIds.has(item.id);
 
-      return matchesSearch && matchesBreadcrumbType && matchesBreadcrumbAirline && matchesBreadcrumbAta && matchesBreadcrumbPartNo && matchesType && matchesManual && matchesDate && (!this.filter3D || item.has3D) && isChecked;
+      return matchesSearch && matchesBreadcrumbType && matchesBreadcrumbAirline && matchesBreadcrumbAta && matchesBreadcrumbPartNo && (item.isUserMarkup || (matchesType && matchesManual && matchesDate)) && (!this.filter3D || item.has3D) && isChecked;
     });
 
     const siteGroups = {};
@@ -563,7 +727,8 @@ export class RecordSidebar {
       siteGroups[item.siteId].records.push({
         id: item.id,
         typeIcon: item.typeLabels.length > 1 ? '⧉' : (iconMap[item.typeLabels[0]] || '⊞'),
-        isExisting: true
+        isExisting: true,
+        isUserMarkup: !!item.isUserMarkup
       });
     });
 
@@ -577,268 +742,73 @@ export class RecordSidebar {
   }
 
   initEvents() {
-    // Selection View Events
-    if (this.view === 'selection') {
-      const selects = ['type-select', 'airline-select', 'msn-select', 'registration-select', 'ata-select'];
-      const dispatchFilterChange = () => {
-        const newFilters = {
-          type: [this.container.querySelector('#type-select').value],
-          airline: [this.container.querySelector('#airline-select').value],
-          msn: [this.container.querySelector('#msn-select').value],
-          registration: [this.container.querySelector('#registration-select').value],
-          ata: [this.container.querySelector('#ata-select').value],
-          partNo: this.container.querySelector('#part-no-input').value
-        };
+    // 1. Sidebar Toggle Handle (Universal)
+    const toggleHandle = this.container.querySelector('#btn-left-sidebar-toggle');
+    if (toggleHandle) {
+      toggleHandle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (window.app) window.app.toggleLeftPanel();
+      });
+    }
 
-        window.dispatchEvent(new CustomEvent('filter-change', {
-          detail: newFilters
-        }));
+    // 2. View-Specific Events
+    if (this.view === 'selection') {
+      const dispatchFilterChange = () => {
+        window.dispatchEvent(new CustomEvent('filter-change', { detail: this.activeFilters }));
       };
 
-      selects.forEach(id => {
-        const el = this.container.querySelector(`#${id}`);
-        if (el) el.addEventListener('change', dispatchFilterChange);
-      });
-      const partNoInput = this.container.querySelector('#part-no-input');
-      if (partNoInput) {
-        partNoInput.addEventListener('input', dispatchFilterChange);
-      }
-
-      const confirmBtn = this.container.querySelector('.btn-confirm');
-      if (confirmBtn) {
-        confirmBtn.addEventListener('click', () => {
-          this.view = 'drilldown';
-          // Dispatch event to show spatial filters in 3D view
-          window.dispatchEvent(new CustomEvent('enter-drilldown'));
-          this.render();
-        });
-      }
-
-      const collapseBtn = this.container.querySelector('#btn-collapse-left');
-      if (collapseBtn) {
-        collapseBtn.addEventListener('click', (e) => {
+      // Confirm button to proceed to Level 2
+      const btnConfirm = this.container.querySelector('#btn-overview-confirm');
+      if (btnConfirm) {
+        btnConfirm.addEventListener('click', (e) => {
           e.stopPropagation();
-          window.dispatchEvent(new CustomEvent('toggle-left-panel', { detail: false }));
+          this.view = 'drilldown';
+          if (window.app) window.app.setViewLevel(2);
+          this.render();
+          window.dispatchEvent(new CustomEvent('enter-drilldown'));
         });
       }
 
+      // Reset button
       const resetBtn = this.container.querySelector('.btn-reset');
       if (resetBtn) {
         resetBtn.addEventListener('click', () => {
-          selects.forEach(id => {
-            const select = this.container.querySelector(`#${id}`);
-            if (select) select.selectedIndex = 0;
-          });
-          if (partNoInput) partNoInput.value = '';
+          this.activeFilters = {
+            type: ['全部型别'],
+            airline: ['全部航司'],
+            msn: ['全部MSN'],
+            registration: ['全部注册号'],
+            ata: ['全部ATA'],
+            partNo: ''
+          };
           dispatchFilterChange();
           window.dispatchEvent(new CustomEvent('filter-reset'));
-        });
-      }
-    }
-    // Drilldown View Events
-    else {
-      const backBtn = this.container.querySelector('.btn-back');
-      const footerBackBtn = this.container.querySelector('.btn-back-footer');
-
-      const goBack = () => {
-        this.view = 'selection';
-        // Dispatch event to hide spatial filters in 3D view
-        window.dispatchEvent(new CustomEvent('exit-drilldown'));
-        this.render();
-      };
-
-      if (backBtn) backBtn.addEventListener('click', goBack);
-      if (footerBackBtn) footerBackBtn.addEventListener('click', goBack);
-
-      const collapseBtnDrill = this.container.querySelector('#btn-collapse-left-drill');
-      if (collapseBtnDrill) {
-        collapseBtnDrill.addEventListener('click', (e) => {
-          e.stopPropagation();
-          window.dispatchEvent(new CustomEvent('toggle-left-panel', { detail: false }));
+          this.render();
         });
       }
 
-      // ATA Tree Toggle & Checkboxes
-      const ataHeaders = this.container.querySelectorAll('.ata-header');
-      this.uncheckedMarkerIds = this.uncheckedMarkerIds || new Set();
-      
-      ataHeaders.forEach(header => {
-        const checkbox = header.querySelector('.ata-branch-checkbox');
-        if (checkbox) {
-          checkbox.addEventListener('change', (e) => {
-            const isChecked = e.target.checked;
-            const items = header.parentElement.querySelectorAll('.record-item');
-            items.forEach(item => {
-              const id = item.dataset.id;
-              if (isChecked) {
-                  this.uncheckedMarkerIds.delete(id);
-              } else {
-                  this.uncheckedMarkerIds.add(id);
-              }
-            });
-            this.render();
-          });
-        }
-        
-        header.addEventListener('click', (e) => {
-          if (e.target.type === 'checkbox') return; // Prevent toggle if clicked on checkbox
-          const group = header.parentElement;
-          const code = header.dataset.ata;
-          const isExpanded = group.classList.toggle('expanded');
-          const chevron = header.querySelector('.chevron');
-          if (isExpanded) {
-            this.collapsedAtaGroups.delete(code);
-            chevron.textContent = '▼';
-          } else {
-            this.collapsedAtaGroups.add(code);
-            chevron.textContent = '▶';
-          }
-        });
-      });
-
-      // Record selection
-      const recordItems = this.container.querySelectorAll('.record-item');
-      recordItems.forEach(item => {
-        item.addEventListener('click', (e) => {
-          e.stopPropagation();
-
-          const pinIcon = e.target.closest('.icon-pin');
-          if (pinIcon) {
-            this.filter3D = !this.filter3D;
-            this.render();
-            return;
-          }
-
-          const id = item.getAttribute('data-id');
-          this.selectedMarkerId = id;
-
-          const marker = this.markerData.find(m => m.id === id);
-          if (marker) {
-            window.dispatchEvent(new CustomEvent('damage-marker-select', { detail: marker }));
-          }
-          this.render();
-        });
-      });
-
-      // Tab switch logic
-      const tabs = this.container.querySelectorAll('.tab-item');
-      tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-          const targetTab = tab.dataset.tab;
-          if (this.activeTab === targetTab) return;
-          this.activeTab = targetTab;
-          if (window.app) window.app.toggleRightPanel(false);
-          this.render();
-        });
-      });
-
-      // Multi-select dropdown toggle
-      const dropdowns = this.container.querySelectorAll('.custom-dropdown');
-      dropdowns.forEach(dd => {
-        const header = dd.querySelector('.dropdown-header');
-        header.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const id = dd.dataset.id;
-          if (this.openDropdownId === id) this.openDropdownId = null;
-          else this.openDropdownId = id;
-          this.render();
-        });
-      });
-
-      // Multi-select checkbox change
-      const cbs = this.container.querySelectorAll('.multi-select-cb');
-      cbs.forEach(cb => {
-        cb.addEventListener('change', (e) => {
-          const val = e.target.value;
-          const isChecked = e.target.checked;
-          const dropdownId = e.target.dataset.dropdown;
-          
-          if (dropdownId === 'drill-ata-filter') {
-            if (val === '全部ATA') {
-              this.activeFilters.ata = ['全部ATA'];
-            } else {
-              this.activeFilters.ata = this.activeFilters.ata.filter(a => a !== '全部ATA');
-              if (isChecked) this.activeFilters.ata.push(val);
-              else this.activeFilters.ata = this.activeFilters.ata.filter(a => a !== val);
-              if (this.activeFilters.ata.length === 0) this.activeFilters.ata = ['全部ATA'];
-            }
-          } else if (dropdownId === 'drill-manual-filter') {
-            if (val === 'all') {
-              this.selectedManualStatuses = ['published', 'unpublished', 'none'];
-            } else {
-               if (this.selectedManualStatuses.length === 3) this.selectedManualStatuses = [];
-               if (isChecked) this.selectedManualStatuses.push(val);
-               else this.selectedManualStatuses = this.selectedManualStatuses.filter(s => s !== val);
-               if (this.selectedManualStatuses.length === 0) this.selectedManualStatuses = ['published', 'unpublished', 'none'];
-            }
-          } else if (dropdownId === 'drill-type-filter') {
-            if (val === '全部类型') {
-              this.selectedTypeLabels = [];
-            } else {
-              if (isChecked) this.selectedTypeLabels.push(val);
-              else this.selectedTypeLabels = this.selectedTypeLabels.filter(t => t !== val);
-            }
-          }
-          this.render();
-        });
-      });
-
-      // Search input handler with Debounce
-      let searchDebounceTimeout = null;
-      const partSearchInput = this.container.querySelector('#drill-part-search');
-      if (partSearchInput) {
-        partSearchInput.addEventListener('input', (e) => {
+      // Search Input
+      const partNoInput = this.container.querySelector('#part-no-input');
+      if (partNoInput) {
+        partNoInput.addEventListener('input', (e) => {
           this.activeFilters.partNo = e.target.value;
-          this.searchQuery = e.target.value;
-
-          clearTimeout(searchDebounceTimeout);
-          searchDebounceTimeout = setTimeout(() => {
-            this.render();
-            const newSearchInput = this.container.querySelector('#drill-part-search');
-            if (newSearchInput) {
-              newSearchInput.focus();
-              newSearchInput.setSelectionRange(this.activeFilters.partNo.length, this.activeFilters.partNo.length);
-            }
-          }, 300); // 300ms debounce
+          dispatchFilterChange();
+        });
+      }
+    } 
+    else {
+      // Drilldown View Events
+      const backBtn = this.container.querySelector('.btn-back-footer');
+      if (backBtn) {
+        backBtn.addEventListener('click', () => {
+          this.view = 'selection';
+          if (window.app) window.app.setViewLevel(1);
+          window.dispatchEvent(new CustomEvent('exit-drilldown'));
+          this.render();
         });
       }
 
-      // Buttons
-      const btnMarkup = this.container.querySelector('#btn-draw-markup');
-      if (btnMarkup) {
-        btnMarkup.addEventListener('click', (e) => {
-          e.stopPropagation();
-          window.dispatchEvent(new CustomEvent('enter-drawing-mode'));
-        });
-      }
-
-      const btnExport = this.container.querySelector('#btn-export-tree');
-      if (btnExport) {
-        btnExport.addEventListener('click', (e) => {
-          e.stopPropagation();
-          alert('ATA结构树导出功能触发 (Mock: Exported to ATA_Tree.xlsx)');
-        });
-      }
-
-      const crSearchInput = this.container.querySelector('#cr-search-input');
-      if (crSearchInput) {
-        crSearchInput.addEventListener('input', (e) => {
-          this.searchQuery = e.target.value;
-
-          clearTimeout(searchDebounceTimeout);
-          searchDebounceTimeout = setTimeout(() => {
-            this.render();
-            const newInput = this.container.querySelector('#cr-search-input');
-            if (newInput) {
-              newInput.focus();
-              newInput.setSelectionRange(this.searchQuery.length, this.searchQuery.length);
-            }
-          }, 300); // 300ms debounce
-        });
-      }
-
-      // Drilldown Reset Handler
-      const drillResetBtn = this.container.querySelector('.sidebar-footer .btn-reset');
+      const drillResetBtn = this.container.querySelector('#btn-drill-reset-icon');
       if (drillResetBtn) {
         drillResetBtn.addEventListener('click', () => {
           this.filterManual = false;
@@ -846,32 +816,179 @@ export class RecordSidebar {
           this.selectedTypeLabels = [];
           this.selectedManualStatuses = ['published', 'unpublished', 'none'];
           this.searchQuery = '';
-          this.dateRange = { start: '2026-01-01', end: '2026-04-01' };
-          this.damageTypePanelVisible = false;
-          this.manualFilterPanelVisible = false;
+          this.activeFilters.ata = ['全部ATA'];
+          this.activeFilters.partNo = '';
           this.render();
+          window.dispatchEvent(new CustomEvent('filter-change', { detail: this.activeFilters }));
         });
       }
-    }
 
-    // Common Row selection logic
-    const tbody = this.container.querySelector('.data-table tbody');
-    if (tbody) {
-      tbody.addEventListener('click', (e) => {
-        const tr = e.target.closest('tr');
-        if (tr) {
-          this.container.querySelectorAll('.data-table tr').forEach(r => r.classList.remove('selected'));
-          tr.classList.add('selected');
-        }
+      // ATA Tree Logic
+      const ataHeaders = this.container.querySelectorAll('.ata-header, .ata-sub-header');
+      ataHeaders.forEach(header => {
+        header.addEventListener('click', (e) => {
+          if (e.target.type === 'checkbox') {
+            // Handle branch checkbox
+            const isChecked = e.target.checked;
+            const items = header.parentElement.querySelectorAll('.record-item');
+            items.forEach(item => {
+              const id = item.dataset.id;
+              if (isChecked) this.uncheckedMarkerIds.delete(id);
+              else this.uncheckedMarkerIds.add(id);
+            });
+            this.render();
+            return;
+          }
+
+          const nodeId = header.dataset.nodeId;
+          if (nodeId) this.selectedTreeNodeId = nodeId;
+
+          if (e.target.classList.contains('chevron')) {
+            const group = header.parentElement;
+            const isExpanded = group.classList.toggle('expanded');
+            if (isExpanded) this.collapsedAtaGroups.delete(nodeId);
+            else this.collapsedAtaGroups.add(nodeId);
+          }
+          this.render();
+        });
+      });
+
+      // Tab switch
+      const tabs = this.container.querySelectorAll('.tab-item');
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          this.activeTab = tab.dataset.tab;
+          this.render();
+        });
+      });
+
+      // 3D Marking
+      const markupBtn = this.container.querySelector('#btn-draw-markup-footer');
+      if (markupBtn) {
+        markupBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          window.dispatchEvent(new CustomEvent('enter-drawing-mode', { detail: { mode: 'local-component' } }));
+        });
+      }
+
+      // Record items
+      const recordItems = this.container.querySelectorAll('.record-item');
+      recordItems.forEach(item => {
+        item.addEventListener('click', (e) => {
+          const id = item.dataset.id;
+          const marker = this.markerData.find(m => m.id === id);
+          if (!marker) return;
+
+          // Check if specific action icons were clicked
+          const target = e.target;
+          if (target.closest('.icon-delete')) {
+            e.stopPropagation();
+            window.dispatchEvent(new CustomEvent('request-delete-markup', { detail: { id } }));
+            return;
+          }
+
+          if (target.closest('.icon-edit')) {
+            e.stopPropagation();
+            window.dispatchEvent(new CustomEvent('enter-drawing-mode', { 
+              detail: { 
+                mode: 'local-component', 
+                editingId: id, 
+                initialTitle: marker.title 
+              } 
+            }));
+            return;
+          }
+
+          if (target.closest('.icon-pin')) {
+            e.stopPropagation();
+            this.selectedMarkerId = id;
+            window.dispatchEvent(new CustomEvent('damage-marker-select', { detail: marker }));
+            // Dispatch custom retrieval event for the leader line animation
+            window.dispatchEvent(new CustomEvent('locate-spatial-marker', { detail: marker }));
+            this.render();
+            return;
+          }
+
+          // Default selection behavior
+          this.selectedMarkerId = id;
+          window.dispatchEvent(new CustomEvent('damage-marker-select', { detail: marker }));
+          this.render();
+        });
       });
     }
+
+    // 3. Common Components (Dropdowns, etc.)
+    const dropdowns = this.container.querySelectorAll('.custom-dropdown');
+    dropdowns.forEach(dd => {
+      const header = dd.querySelector('.dropdown-header');
+      header.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = dd.dataset.id;
+        this.openDropdownId = (this.openDropdownId === id) ? null : id;
+        this.render();
+      });
+    });
+
+    const checkboxes = this.container.querySelectorAll('.multi-select-cb');
+    checkboxes.forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        const val = e.target.value;
+        const isChecked = e.target.checked;
+        const dropdownId = e.target.dataset.dropdown;
+
+        const syncFilter = (key, allLabel) => {
+          if (val === allLabel) {
+            this.activeFilters[key] = [allLabel];
+          } else {
+            let current = [...this.activeFilters[key]].filter(v => v !== allLabel);
+            if (isChecked) current.push(val);
+            else current = current.filter(v => v !== val);
+            if (current.length === 0) current = [allLabel];
+            this.activeFilters[key] = current;
+          }
+        };
+
+        if (dropdownId === 'type') syncFilter('type', '全部型别');
+        else if (dropdownId === 'airline') syncFilter('airline', '全部航司');
+        else if (dropdownId === 'msn') syncFilter('msn', '全部MSN');
+        else if (dropdownId === 'registration') syncFilter('registration', '全部注册号');
+        else if (dropdownId === 'ata' || dropdownId === 'drill-ata-filter') syncFilter('ata', '全部ATA');
+        else if (dropdownId === 'drill-manual-filter') {
+          if (val === 'all') this.selectedManualStatuses = ['published', 'unpublished', 'none'];
+          else {
+            if (this.selectedManualStatuses.length === 3) this.selectedManualStatuses = [];
+            if (isChecked) this.selectedManualStatuses.push(val);
+            else this.selectedManualStatuses = this.selectedManualStatuses.filter(s => s !== val);
+            if (this.selectedManualStatuses.length === 0) this.selectedManualStatuses = ['published', 'unpublished', 'none'];
+          }
+        }
+        else if (dropdownId === 'drill-type-filter') {
+          if (val === '全部类型') {
+            this.selectedTypeLabels = [];
+          } else {
+            if (isChecked) this.selectedTypeLabels.push(val);
+            else this.selectedTypeLabels = this.selectedTypeLabels.filter(t => t !== val);
+          }
+        }
+
+        window.dispatchEvent(new CustomEvent('filter-change', { detail: this.activeFilters }));
+        this.render();
+      });
+    });
+
+    // Row Selection in Table
+    const tableRows = this.container.querySelectorAll('.data-table tbody tr');
+    tableRows.forEach(row => {
+      row.addEventListener('click', () => {
+        tableRows.forEach(r => r.classList.remove('selected'));
+        row.classList.add('selected');
+      });
+    });
   }
 
   addStyles() {
     const styleId = 'record-sidebar-styles';
     if (document.getElementById(styleId)) {
-      // Update existing style if needed, or just return. 
-      // For recovery, let's replace it to be sure.
       document.getElementById(styleId).remove();
     }
 
@@ -879,6 +996,7 @@ export class RecordSidebar {
     style.id = styleId;
     style.textContent = `
       .sidebar-container {
+        position: relative;
         display: flex;
         flex-direction: column;
         height: 100%;
@@ -889,44 +1007,77 @@ export class RecordSidebar {
         border-radius: 12px;
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
         border: 1px solid rgba(255, 255, 255, 0.3);
-        overflow: hidden;
         min-height: 0;
+        transition: background 0.4s, border 0.4s, box-shadow 0.4s;
       }
 
-      .separator {
-        color: #cbd5e1;
+      /* 核心修复：收起时平滑隐藏内部内容，并增加位移以同步面板移动 */
+      .sidebar-container > *:not(.btn-toggle-handle) {
+        transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1), 
+                    transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), 
+                    visibility 0.4s;
+        transform: translateX(0);
       }
 
-      /* Refined Sidebar Header */
-      .sidebar-header-title {
-        padding: 16px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        color: var(--text-main);
-        font-size: 15px;
-        background: rgba(240, 242, 245, 0.4);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
+      #app-container.left-collapsed .left-panel-region .sidebar-container > *:not(.btn-toggle-handle) {
+        opacity: 0;
+        pointer-events: none;
+        visibility: hidden;
+        transform: translateX(-20px);
       }
 
-      .btn-toggle-sidebar {
-        background: rgba(255, 255, 255, 0.5);
-        border: 1px solid rgba(0, 0, 0, 0.05);
-        color: #64748b;
+      #app-container.left-collapsed .left-panel-region .sidebar-container {
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        backdrop-filter: none;
+      }
+
+      /* 左侧手柄定位隔离 */
+      .left-panel-region .btn-toggle-handle {
+        position: absolute;
+        right: -20px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 20px;
+        height: 80px;
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-left: none;
+        box-shadow: 6px 0 15px rgba(0,0,0,0.08);
+        border-radius: 0 12px 12px 0;
         cursor: pointer;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 10px;
-        transition: all 0.2s;
         display: flex;
         align-items: center;
         justify-content: center;
+        padding: 0;
+        z-index: 2000;
+        transition: all 0.3s cubic-bezier(0.19, 1, 0.22, 1);
+        pointer-events: auto !important;
       }
 
-      .btn-toggle-sidebar:hover {
-        background: white;
+      .left-panel-region .btn-toggle-handle:hover {
+        width: 28px;
+        right: -28px;
+        background: var(--primary-blue);
+        border-color: var(--primary-blue);
+        box-shadow: 8px 0 20px rgba(0, 82, 217, 0.3);
+      }
+
+      .left-panel-region .handle-icon {
+        font-size: 10px;
+        color: #94a3b8;
+        transform: scaleY(1.2);
+        transition: all 0.2s;
+      }
+
+      .left-panel-region .btn-toggle-handle:hover .handle-icon {
+        color: white;
+      }
+
+      #app-container.left-collapsed .left-panel-region .btn-toggle-handle .handle-icon {
+        transform: scaleY(1.2) rotate(180deg);
         color: var(--primary-blue);
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
       }
 
       
@@ -938,6 +1089,8 @@ export class RecordSidebar {
         gap: 14px;
         background: rgba(245, 245, 245, 0.3);
         border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        position: relative;
+        z-index: 100; /* Ensure dropdowns are above the table below */
       }
       
       .filter-row {
@@ -1213,7 +1366,7 @@ export class RecordSidebar {
         padding: 8px 0;
       }
       
-      .ata-header {
+      .ata-header, .ata-sub-header {
         padding: 6px 12px;
         display: flex;
         align-items: center;
@@ -1221,18 +1374,60 @@ export class RecordSidebar {
         gap: 6px;
         font-size: 12px;
         color: var(--text-main);
-        transition: background 0.2s;
+        transition: background 0.2s, border-color 0.2s;
+        border-right: 2px solid transparent;
       }
       
-      .ata-header:hover {
+      .ata-header:hover, .ata-sub-header:hover {
         background: #f8fafc;
       }
+
+      .ata-header.selected, .ata-sub-header.selected {
+        background: rgba(0, 82, 217, 0.05);
+        color: var(--primary-blue);
+        font-weight: 600;
+        border-right-color: var(--primary-blue);
+      }
+      .ata-header.selected .ata-code, .ata-sub-header.selected .branch-name {
+        color: var(--primary-blue);
+        font-weight: 600;
+      }
+
+      .ata-sub-header {
+        padding-left: 20px;
+        border-bottom: 1px dotted rgba(0,0,0,0.05);
+      }
+
+      .ata-sub-content {
+        display: none;
+        padding-left: 14px;
+        border-left: 1px dashed #e2e8f0;
+        margin-left: 23px;
+        padding-bottom: 4px;
+      }
+
+      .ata-sub-branch.expanded .ata-sub-content {
+        display: block;
+      }
       
-      .ata-header .chevron {
+      .ata-group.expanded > .ata-content {
+        display: block;
+      }
+      
+      .ata-header .chevron, .ata-sub-header .chevron {
         font-size: 9px;
         color: #cbd5e1;
-        width: 10px;
+        width: 14px;
+        height: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         transition: transform 0.2s;
+        border-radius: 2px;
+      }
+
+      .ata-header .chevron:hover, .ata-sub-header .chevron:hover {
+        background: rgba(0,0,0,0.05);
       }
       
       .ata-group.expanded .ata-header .chevron {

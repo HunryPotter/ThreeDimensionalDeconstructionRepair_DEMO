@@ -19,6 +19,17 @@ export class DetailSidebar {
   render() {
     this.renderMarkerView();
 
+    // Condition: Only show toggle handle if app is in Level 2
+    const handle = this.container.querySelector('#btn-right-sidebar-toggle');
+    if (handle) {
+      const isLevel2 = window.app && window.app.viewLevel === 2;
+      handle.style.display = isLevel2 ? 'flex' : 'none';
+      if (!isLevel2) {
+        // Ensure panel is collapsed visually if we're in Level 1
+        if (window.app) window.app.toggleRightPanel(false);
+      }
+    }
+
     const closeBtn = this.container.querySelector('.btn-close-right');
     if (closeBtn) {
       closeBtn.addEventListener('click', () => {
@@ -130,7 +141,7 @@ export class DetailSidebar {
                 </div>
                 <div class="info-row"><span class="label">SR编号:</span><span class="value highlight muted sm">${data.srRecord ? data.srRecord.id : '--'}</span></div>
                 <div class="info-row"><span class="label">ATA:</span><span class="value">${data.ataCode || '--'}</span></div>
-                <div class="info-row"><span class="label">架次号:</span><span class="value">${crs.sortieNo || '--'}</span></div>
+                <div class="info-row"><span class="label">MSN号:</span><span class="value">${crs.sortieNo || '--'}</span></div>
                 <div class="info-block">
                   <span class="label">适航性能评估:</span>
                   <span class="value highlight sm">${crs.assessmentReport || '--'}</span>
@@ -247,6 +258,11 @@ export class DetailSidebar {
             ${contentHtml}
           </div>
         </div>
+
+        <!-- Panel Toggle Bookmark (Left Edge, Middle) -->
+        <button class="btn-toggle-handle" id="btn-right-sidebar-toggle" title="隐藏/显示面板">
+          <span class="handle-icon">▶</span>
+        </button>
       </div>
     `;
 
@@ -265,37 +281,115 @@ export class DetailSidebar {
         if (window.app) window.app.toggleRightPanel(false);
       });
     }
+
+    const toggleHandle = this.container.querySelector('#btn-right-sidebar-toggle');
+    if (toggleHandle) {
+      toggleHandle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (window.app) window.app.toggleRightPanel(); // Toggle current state
+      });
+    }
   }
 
   addStyles() {
-    const style = document.createElement('style');
-    style.textContent = `
-      :root {
-        --text-color-main: #1e293b;
-        --text-color-secondary: #64748b;
-        --text-color-muted: #94a3b8;
-        --primary-blue: #0052d9;
-        --border-color-light: rgba(0, 0, 0, 0.05);
-        --bg-glass-sidebar: rgba(245, 245, 245, 0.72);
-      }
+    const styleId = 'detail-sidebar-styles';
+    if (document.getElementById(styleId)) {
+      document.getElementById(styleId).remove();
+    }
 
-      .sidebar-container {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      .right-panel-region .sidebar-container {
+        position: relative;
         display: flex;
         flex-direction: column;
         height: 100%;
-        background: var(--bg-glass-sidebar);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
+        width: 100%;
+        background: rgba(255, 255, 255, 0.75);
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
         border-radius: 12px;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        overflow: hidden;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        padding: 0;
+        transition: background 0.4s, border 0.4s, box-shadow 0.4s;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       }
 
+      /* 核心修复：收起时平滑隐藏内部内容，并增加位移以同步面板回缩 */
+      .right-panel-region .sidebar-container > *:not(.btn-toggle-handle) {
+        transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1), 
+                    transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), 
+                    visibility 0.4s;
+        transform: translateX(0);
+      }
+
+      #app-container.right-collapsed .right-panel-region .sidebar-container > *:not(.btn-toggle-handle) {
+        opacity: 0;
+        pointer-events: none;
+        visibility: hidden;
+        transform: translateX(20px);
+      }
+
+      #app-container.right-collapsed .right-panel-region .sidebar-container {
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        backdrop-filter: none;
+      }
+
+      /* 右侧手柄定位隔离 */
+      .right-panel-region .btn-toggle-handle {
+        position: absolute;
+        left: -20px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 20px;
+        height: 80px;
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-right: none;
+        box-shadow: -6px 0 15px rgba(0,0,0,0.08);
+        border-radius: 12px 0 0 12px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        z-index: 2000;
+        transition: all 0.3s cubic-bezier(0.19, 1, 0.22, 1);
+        pointer-events: auto !important;
+      }
+
+      .right-panel-region .btn-toggle-handle:hover {
+        width: 28px;
+        left: -28px;
+        background: var(--primary-blue);
+        border-color: var(--primary-blue);
+        box-shadow: -8px 0 20px rgba(0, 82, 217, 0.3);
+      }
+
+      .right-panel-region .handle-icon {
+        font-size: 10px;
+        color: #94a3b8;
+        transform: scaleY(1.2);
+        transition: all 0.2s;
+      }
+
+      .right-panel-region .btn-toggle-handle:hover .handle-icon {
+        color: white;
+      }
+
+      #app-container.right-collapsed .right-panel-region .btn-toggle-handle .handle-icon {
+        transform: scaleY(1.2) rotate(180deg);
+        color: var(--primary-blue);
+      }
+
+      /* Original Inner Styles ... */
       .sidebar-header {
-        padding: 14px 16px;
-        border-bottom: 1px solid var(--border-color-light);
+        padding: 16px;
+        border-bottom: 1px solid rgba(0,0,0,0.05);
         display: flex;
         justify-content: space-between;
         align-items: center;

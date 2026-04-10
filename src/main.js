@@ -18,8 +18,21 @@ class App {
         // 0. External Site View (Background)
         this.externalView = new ExternalCaseView(document.body);
 
-        this.initExpandButton();
+        this.viewLevel = 1; // Default to layer 1
         this.init();
+        this.updateViewLevelClass();
+    }
+
+    updateViewLevelClass() {
+        this.container.classList.remove('view-level-1', 'view-level-2');
+        this.container.classList.add(`view-level-${this.viewLevel}`);
+    }
+
+    setViewLevel(level) {
+        this.viewLevel = level;
+        this.updateViewLevelClass();
+        // Force refresh components that care about level
+        if (this.rightSidebar) this.rightSidebar.render();
     }
 
     init() {
@@ -77,11 +90,9 @@ class App {
                 if (this.popupManager.isVisible && this.popupManager.records.some(r => r.id === selectedMarker.id)) {
                     this.popupManager.show(this.popupManager.records, selectedMarker.id);
                 } else {
-                    // Find 2-3 related markers from the same fleet context
+                    // Find ALL related markers from the same component level (ATA + subBranch)
                     const related = this.leftSidebar.markerData
-                        .filter(m => m.airline === selectedMarker.airline && m.aircraftType === selectedMarker.aircraftType && m.id !== selectedMarker.id)
-                        .sort(() => 0.5 - Math.random())
-                        .slice(0, 3);
+                        .filter(m => m.ataCode === selectedMarker.ataCode && m.subBranch === selectedMarker.subBranch && m.id !== selectedMarker.id);
 
                     this.popupManager.show([selectedMarker, ...related], selectedMarker.id);
                 }
@@ -136,60 +147,12 @@ class App {
         } else {
             this.container.classList.add('left-collapsed');
         }
-
-        // Update expand button visibility
-        if (this.expandLeftBtn) {
-            this.expandLeftBtn.style.display = this.container.classList.contains('left-collapsed') ? 'flex' : 'none';
-        }
-    }
-
-    initExpandButton() {
-        this.expandLeftBtn = document.createElement('button');
-        this.expandLeftBtn.className = 'btn-expand-left';
-        this.expandLeftBtn.innerHTML = '▶';
-        this.expandLeftBtn.title = '展开面板';
-        this.expandLeftBtn.style.display = 'none'; // Hidden by default
-
-        // CSS for expand button
-        const style = document.createElement('style');
-        style.textContent = `
-            .btn-expand-left {
-                position: absolute;
-                left: 0;
-                top: 50%;
-                transform: translateY(-50%);
-                z-index: 1001;
-                background: white;
-                border: 1px solid #e2e8f0;
-                border-left: none;
-                border-radius: 0 4px 4px 0;
-                padding: 12px 4px;
-                cursor: pointer;
-                color: #64748b;
-                box-shadow: 2px 0 8px rgba(0,0,0,0.05);
-                display: none;
-                align-items: center;
-                justify-content: center;
-                font-size: 10px;
-                transition: all 0.2s;
-            }
-            .btn-expand-left:hover {
-                background: #f8fafc;
-                color: var(--primary-blue);
-                padding-right: 8px;
-            }
-        `;
-        document.head.appendChild(style);
-
-        this.expandLeftBtn.addEventListener('click', () => {
-            this.toggleLeftPanel(true);
-        });
-
-        document.body.appendChild(this.expandLeftBtn);
     }
 
     toggleRightPanel(show) {
-        if (show) {
+        if (show === undefined) {
+            this.container.classList.toggle('right-collapsed');
+        } else if (show) {
             this.container.classList.remove('right-collapsed');
         } else {
             this.container.classList.add('right-collapsed');

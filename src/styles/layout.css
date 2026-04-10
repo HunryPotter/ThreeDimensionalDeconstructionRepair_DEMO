@@ -35,17 +35,15 @@
     display: flex;
     flex-direction: column;
     padding: 16px;
-    z-index: 10;
+    z-index: 100; /* Higher than main-view-region (20) */
     min-height: 0;
-    /* CRITICAL: Allows flex child to overflow/scroll */
-    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), padding 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+    overflow: visible; /* Allow handles to peek out */
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), padding 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .left-collapsed .left-panel-region {
     width: 0;
-    padding: 0;
-    opacity: 0;
-    pointer-events: none;
+    padding: 16px 0; /* Keep vertical padding for centering handle if needed, but horizontal 0 */
 }
 
 .main-view-region {
@@ -60,17 +58,15 @@
     display: flex;
     flex-direction: column;
     padding: 16px;
-    z-index: 10;
+    z-index: 100;
     min-height: 0;
-    /* CRITICAL: Allows flex child to overflow/scroll */
-    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), padding 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+    overflow: visible;
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), padding 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .right-collapsed .right-panel-region {
     width: 0;
-    padding: 0;
-    opacity: 0;
-    pointer-events: none;
+    padding: 16px 0;
 }
 
 /* Scrollbars */
