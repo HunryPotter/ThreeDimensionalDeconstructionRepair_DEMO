@@ -13,6 +13,32 @@ export class PopupManager {
     this.container.style.display = 'none';
     this.parent.appendChild(this.container);
     this.addStyles();
+    this.initGlobalEvents(); // Initialize global listeners once
+  }
+
+  initGlobalEvents() {
+    window.addEventListener('confirm-delete-action', (e) => {
+      const id = e.detail.id;
+      if (!this.records) return;
+
+      // Check if the deleted record is in our current list
+      const index = this.records.findIndex(r => r.id === id);
+      if (index !== -1) {
+        // Remove from list
+        this.records = this.records.filter(r => r.id !== id);
+
+        if (this.records.length === 0) {
+          this.hide();
+        } else if (this.data && this.data.id === id) {
+          // If we were showing the deleted record, switch to the first remaining one
+          this.selectRecord(this.records[0].id);
+        } else {
+          // Just re-render the list
+          this.render();
+          this.initEvents();
+        }
+      }
+    });
   }
 
   show(records, selectedId) {

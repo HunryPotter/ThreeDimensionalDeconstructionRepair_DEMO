@@ -144,6 +144,17 @@ export class SpatialView {
           </div>
         </div>
 
+        <!-- Warning/Alert Popup -->
+        <div id="warning-alert-popup" class="confirm-dialog" style="display: none;">
+          <div class="confirm-header" id="warning-alert-title">操作提示</div>
+          <div class="confirm-body">
+            <p class="warning-text" id="warning-alert-message"></p>
+          </div>
+          <div class="confirm-footer">
+            <button id="btn-warning-ok" class="btn-confirm primary">我知道了</button>
+          </div>
+        </div>
+
         <!-- Spatial Navigation Tools (Level 2 Only) -->
         <div class="spatial-nav-tools" id="spatial-filters" style="display: none;">
           <div class="spatial-filter-group">
@@ -820,6 +831,21 @@ export class SpatialView {
       }
       this.pendingDeleteId = null;
       if (deletePopup) deletePopup.style.display = 'none';
+    });
+
+    // Warning Alert Interaction
+    const warningPopup = this.container.querySelector('#warning-alert-popup');
+    window.addEventListener('request-internal-alert', (e) => {
+      const { title, message } = e.detail;
+      if (warningPopup) {
+        this.container.querySelector('#warning-alert-title').textContent = title || '操作提示';
+        this.container.querySelector('#warning-alert-message').textContent = message;
+        warningPopup.style.display = 'block';
+      }
+    });
+
+    this.container.querySelector('#btn-warning-ok').addEventListener('click', () => {
+      if (warningPopup) warningPopup.style.display = 'none';
     });
 
     // Global click to close calendar
