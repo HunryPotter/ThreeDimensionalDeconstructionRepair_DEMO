@@ -76,15 +76,19 @@ export class RecordSidebar {
     const dateRangeStart = new Date('2026-01-01');
     const dateRangeEnd = new Date('2026-04-01');
 
-    aircraftTypes.forEach(type => {
-      airlines.forEach(airline => {
-        for (let i = 0; i < 15; i++) {
-          const suffix = (markerCounter++).toString().padStart(4, '0');
-          const markerId = `M-${suffix}`;
+        aircraftTypes.forEach((type, typeIdx) => {
+          airlines.forEach((airline, airlineIdx) => {
+            for (let i = 0; i < 15; i++) {
+              const aircraftIdx = Math.floor(i / 5); // 3 aircraft per airline-type pair
+              const msn = (10000 + (typeIdx * 100) + (airlineIdx * 10) + aircraftIdx).toString();
+              const registration = `B919${msn.slice(-2)}${['P', 'Q', 'R', 'S', 'T'][aircraftIdx % 5]}`;
 
-          const ata = atas[Math.floor(Math.random() * atas.length)];
-          const branches = ['G20', 'G40', 'G50', '通用分段'];
-          const subBranch = branches[Math.floor(Math.random() * branches.length)];
+              const suffix = (markerCounter++).toString().padStart(4, '0');
+              const markerId = `M-${suffix}`;
+
+              const ata = atas[Math.floor(Math.random() * atas.length)];
+              const branches = ['G20', 'G40', 'G50', '通用分段'];
+              const subBranch = branches[Math.floor(Math.random() * branches.length)];
 
           let numTypes = Math.random() > 0.8 ? 2 : 1;
           const selectedLabels = [];
@@ -139,6 +143,8 @@ export class RecordSidebar {
 
           this.markerData.push({
             id: markerId,
+            registration: registration,
+            msn: msn,
             title: `${ata.label} - ${selectedLabels.join(',')}损伤`,
             typeLabels: selectedLabels,
             aircraftType: type,
@@ -349,6 +355,45 @@ export class RecordSidebar {
       return current === value;
     };
 
+    // 1. Cascade logic for dropdown options
+    const { type: selType, airline: selAirline, msn: selMSN, registration: selReg } = this.activeFilters;
+    
+    // Filter markers sequentially to get dynamic options
+    const markersForAirline = this.markerData.filter(m => !selType || selType.includes('全部型别') || selType.includes(m.aircraftType));
+    const dynamicAirlines = Array.from(new Set(markersForAirline.map(m => m.airline))).sort();
+
+    const markersForMSN = markersForAirline.filter(m => !selAirline || selAirline.includes('全部航司') || selAirline.includes(m.airline));
+    const dynamicMSNs = Array.from(new Set(markersForMSN.map(m => m.msn))).sort();
+
+    const markersForReg = markersForMSN.filter(m => !selMSN || selMSN.includes('全部MSN') || selMSN.includes(m.msn));
+    const dynamicRegs = Array.from(new Set(markersForReg.map(m => m.registration))).sort();
+
+    // 2. Final Filter for the Table List (Main Identity Filters Only)
+    const filteredMarkers = this.markerData.filter(item => {
+      const { type, airline, msn, registration } = this.activeFilters;
+      const matchesType = !type || type.includes('全部型别') || type.includes(item.aircraftType);
+      const matchesAirline = !airline || airline.includes('全部航司') || airline.includes(item.airline);
+      const matchesMSN = !msn || msn.includes('全部MSN') || msn.includes(item.msn);
+      const matchesReg = !registration || registration.includes('全部注册号') || registration.includes(item.registration);
+      return matchesType && matchesAirline && matchesMSN && matchesReg;
+    });
+
+    // 3. Group by unique aircraft (Registration + MSN)
+    const aircraftMap = new Map();
+    filteredMarkers.forEach(m => {
+      const key = `${m.registration}-${m.msn}`;
+      if (!aircraftMap.has(key)) {
+        aircraftMap.set(key, {
+          registration: m.registration,
+          msn: m.msn,
+          aircraftType: m.aircraftType,
+          airline: m.airline
+        });
+      }
+    });
+
+    const aircraftList = Array.from(aircraftMap.values());
+
     this.container.innerHTML = `
       <div class="sidebar-container">
         <!-- Sidebar Header -->
@@ -366,21 +411,17 @@ export class RecordSidebar {
 
           ${this.renderDropdownField('airline', '航司选择', [
       { label: '全部航司', value: '全部航司' },
-      { label: '中国东航', value: '中国东航' },
-      { label: '中国国航', value: '中国国航' },
-      { label: '南方航空', value: '南方航空' }
+      ...dynamicAirlines.map(a => ({ label: a, value: a }))
     ], this.activeFilters.airline)}
 
           ${this.renderDropdownField('msn', 'MSN号查询', [
       { label: '全部MSN', value: '全部MSN' },
-      { label: '10025', value: '10025' },
-      { label: '10026', value: '10026' }
+      ...dynamicMSNs.map(msn => ({ label: msn, value: msn }))
     ], this.activeFilters.msn)}
 
           ${this.renderDropdownField('registration', '注册号查询', [
       { label: '全部注册号', value: '全部注册号' },
-      { label: 'B919M', value: 'B919M' },
-      { label: 'B919A', value: 'B919A' }
+      ...dynamicRegs.map(reg => ({ label: reg, value: reg }))
     ], this.activeFilters.registration)}
 
           ${this.renderDropdownField('ata', 'ATA章节', [
@@ -403,27 +444,31 @@ export class RecordSidebar {
           <table class="data-table">
             <thead>
               <tr>
-                <th>序号</th>
-                <th>注册号</th>
+                <th>型别</th>
+                <th>航司</th>
                 <th>MSN号</th>
-                <th>ATA章节</th>
+                <th>注册号</th>
               </tr>
             </thead>
             <tbody>
-              ${Array(30).fill(0).map((_, i) => `
+              ${aircraftList.length > 0 ? aircraftList.map((ac, i) => `
                 <tr class="${i === 0 ? 'selected' : ''}">
-                  <td>${i + 1}</td>
-                  <td>B919${i % 2 === 0 ? 'M' : 'A'}</td>
-                  <td>100${25 + i}</td>
-                  <td>ATA ${['32', '52', '53', '55', '57'][i % 5]}</td>
+                  <td>${ac.aircraftType}</td>
+                  <td>${ac.airline}</td>
+                  <td style="font-weight: 500;">${ac.msn}</td>
+                  <td style="color: var(--primary-blue); font-weight: 500;">${ac.registration}</td>
                 </tr>
-              `).join('')}
+              `).join('') : `
+                <tr>
+                  <td colspan="4" style="text-align: center; padding: 40px; color: #94a3b8;">暂无符合条件的飞机</td>
+                </tr>
+              `}
             </tbody>
           </table>
         </div>
         
         <div class="sidebar-footer">
-          <div class="footer-stats">共 30 条</div>
+          <div class="footer-stats">共 ${aircraftList.length} 条记录</div>
           <div class="footer-actions">
             <button class="btn-reset">重置</button>
             <button class="btn-confirm" id="btn-overview-confirm">确认</button>
