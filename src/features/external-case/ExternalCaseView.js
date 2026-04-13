@@ -1,6 +1,7 @@
 import { NavigationBar } from '../navigation-bar/NavigationBar.js';
 import { StructureTree } from '../record-sidebar/StructureTree.js';
 import { SpatialView } from '../spatial-view/SpatialView.js';
+import casePdf from '../../../prototype/CASE.pdf';
 
 export class ExternalCaseView {
   constructor(container) {
@@ -34,7 +35,7 @@ export class ExternalCaseView {
         <div id="case-main-view" class="case-main-layout">
             <!-- Embedded PDF Site -->
             <div class="pdf-frame-wrapper">
-              <embed src="/prototype/CASE.pdf" type="application/pdf" width="100%" height="100%" />
+              <embed src="${casePdf}" type="application/pdf" width="100%" height="100%" />
             </div>
 
             <!-- Float Return Action -->

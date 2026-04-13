@@ -1,3 +1,5 @@
+import aircraftBg from '../../../prototype/background.png';
+
 export class SpatialView {
   constructor(container) {
     this.container = container;
@@ -30,7 +32,7 @@ export class SpatialView {
         <!-- 3D Scene Marker -->
         <div class="scene-placeholder">
             <div id="spatial-scene-container" class="scene-container">
-                <img src="/prototype/background.png" class="background-aircraft" alt="Aircraft Background">
+                <img src="${aircraftBg}" class="background-aircraft" alt="Aircraft Background">
                 
                 <!-- SVG Overlay for Leader Lines & Measurement -->
                 <svg id="leader-line-svg" class="leader-line-layer">
