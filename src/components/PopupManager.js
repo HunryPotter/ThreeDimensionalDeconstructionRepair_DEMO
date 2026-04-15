@@ -135,6 +135,8 @@ export class PopupManager {
           </div>
         </div>
 
+        <button class="btn-popup-action primary" id="btn-view-component-cr" style="width: 100%; margin-bottom: 12px; height: 32px; font-weight: 600;">查看该零部件关联 CR 信息</button>
+
         <div class="records-section">
           <div class="section-label">已有损伤记录</div>
           <div class="table-scroll-container">
@@ -148,16 +150,37 @@ export class PopupManager {
               </thead>
               <tbody>
                 ${this.records.map((rec, index) => {
-        const hasMulti = rec.typeLabels && rec.typeLabels.length > 1;
-        const typeDesc = hasMulti ? `混合损伤: ${rec.typeLabels.join(', ')}` : (rec.typeLabels ? rec.typeLabels[0] : (rec.typeLabel || '未知'));
+      const hasMulti = rec.typeLabels && rec.typeLabels.length > 1;
+      const typeDesc = hasMulti ? `混合损伤: ${rec.typeLabels.join(', ')}` : (rec.typeLabels ? rec.typeLabels[0] : (rec.typeLabel || '未知'));
 
-        return `
+      let docBadge = '';
+      if (!rec.isUserMarkup) {
+        let hasSr = false;
+        let hasCrs = false;
+        if (rec.srRecords && rec.srRecords.length > 0) {
+          hasSr = true;
+          hasCrs = rec.srRecords.some(sr => sr.crsRecords && sr.crsRecords.length > 0);
+        }
+
+        if (hasSr && hasCrs) {
+          docBadge = '<span class="badge-doc" style="background: #8b5cf6; color: white; padding: 0 4px; border-radius: 4px; font-size: 10px; font-weight: 700; margin-right: 4px;">SR/CRS</span>';
+        } else if (hasSr) {
+          docBadge = '<span class="badge-doc" style="background: #10b981; color: white; padding: 0 4px; border-radius: 4px; font-size: 10px; font-weight: 700; margin-right: 4px;">SR</span>';
+        } else if (hasCrs) {
+          docBadge = '<span class="badge-doc" style="background: #f59e0b; color: white; padding: 0 4px; border-radius: 4px; font-size: 10px; font-weight: 700; margin-right: 4px;">CRS</span>';
+        }
+      }
+
+      return `
                     <tr class="selectable-row ${rec.id === mainRecord.id ? 'current' : ''}" data-id="${rec.id}">
                       <td>${index + 1}</td>
-                      <td class="id-cell">${rec.id}</td>
+                      <td class="id-cell">
+                        ${rec.isUserMarkup ? '<span class="badge-new" style="background: var(--primary-blue); color: white; padding: 0 4px; border-radius: 4px; font-size: 10px; font-weight: 700; margin-right: 4px;">NEW</span>' : docBadge}
+                        ${rec.id}
+                      </td>
                       <td title="${typeDesc}">${typeDesc}</td>
                     </tr>`;
-      }).join('')}
+    }).join('')}
               </tbody>
             </table>
           </div>
@@ -180,19 +203,40 @@ export class PopupManager {
       closeBtn.addEventListener('click', () => this.hide());
     }
 
+    const btnCr = this.container.querySelector('#btn-view-component-cr');
+    if (btnCr) {
+      btnCr.addEventListener('click', () => {
+        window.dispatchEvent(new CustomEvent('show-sidebar-detail', {
+          detail: { 
+            type: 'CR',
+            markerData: this.data // Use current marker context
+          }
+        }));
+      });
+    }
+
     // Handle reverse selection from table
     const rows = this.container.querySelectorAll('.selectable-row');
     rows.forEach(row => {
       row.addEventListener('click', (e) => {
         e.stopPropagation();
         const id = row.dataset.id;
+        const selectedMarker = this.records.find(r => r.id === id);
 
-        // Internal update first to maintain list stability
-        this.selectRecord(id);
+        if (selectedMarker) {
+          // 1. Hide the summary popup first
+          this.hide();
 
-        window.dispatchEvent(new CustomEvent('damage-marker-reverse-select', {
-          detail: { id }
-        }));
+          // 2. Dispatch event that main.js will use to open MarkerPopup
+          window.dispatchEvent(new CustomEvent('damage-marker-select', {
+            detail: selectedMarker
+          }));
+
+          // 3. Keep sidebar in sync
+          window.dispatchEvent(new CustomEvent('damage-marker-reverse-select', {
+            detail: { id }
+          }));
+        }
       });
     });
 

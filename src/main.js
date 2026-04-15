@@ -8,6 +8,7 @@ import { RecordSidebar } from './features/record-sidebar/RecordSidebar.js';
 import { DetailSidebar } from './features/detail-sidebar/DetailSidebar.js';
 import { SpatialView } from './features/spatial-view/SpatialView.js';
 import { PopupManager } from './components/PopupManager.js';
+import { MarkerPopup } from './components/MarkerPopup.js';
 import { ExternalCaseView } from './features/external-case/ExternalCaseView.js';
 
 class App {
@@ -63,50 +64,89 @@ class App {
         this.leftSidebar = new RecordSidebar(leftEl);
         this.rightSidebar = new DetailSidebar(rightEl);
         this.popupManager = new PopupManager(mainEl);
+        this.markerPopup = new MarkerPopup(mainEl);
 
         // 5. Global Event Listeners
         window.addEventListener('damage-marker-reverse-select', (e) => {
-            const { id, allIds } = e.detail;
+            const { id } = e.detail;
             this.leftSidebar.selectRecord(id);
+            this.toggleRightPanel(true);
 
-            if (allIds && allIds.length > 0) {
-                const siteRecords = this.leftSidebar.markerData.filter(m => allIds.includes(m.id));
-                this.popupManager.show(siteRecords, id);
-            } else {
-                if (this.popupManager.isVisible && this.popupManager.records.some(r => r.id === id)) {
-                    this.popupManager.selectRecord(id);
-                } else {
-                    const record = this.leftSidebar.markerData.find(m => m.id === id);
-                    if (record) this.popupManager.show([record], id);
+            // Sync MarkerPopup if in Level 2
+            if (this.viewLevel === 2) {
+                const marker = this.leftSidebar.markerData.find(m => m.id === id);
+                if (marker) {
+                    this.markerPopup.show(marker);
+                    this.popupManager.hide();
                 }
             }
         });
 
         window.addEventListener('damage-marker-select', (e) => {
-            this.toggleRightPanel(true);
-            const selectedMarker = e.detail;
+            if (window.app.viewLevel !== 2) return;
             
-            if (this.leftSidebar.view === 'drilldown') {
-                if (this.popupManager.isVisible && this.popupManager.records.some(r => r.id === selectedMarker.id)) {
-                    this.popupManager.show(this.popupManager.records, selectedMarker.id);
-                } else {
-                    // Find ALL related markers from the same component level (ATA + subBranch)
-                    const related = this.leftSidebar.markerData
-                        .filter(m => m.ataCode === selectedMarker.ataCode && m.subBranch === selectedMarker.subBranch && m.id !== selectedMarker.id);
+            const selectedMarker = e.detail;
+            this.leftSidebar.selectRecord(selectedMarker.id);
 
-                    this.popupManager.show([selectedMarker, ...related], selectedMarker.id);
-                }
+            // Show individual marker popup
+            this.markerPopup.show(selectedMarker);
+
+            // Close component-level summary if it was open
+            this.popupManager.hide();
+        });
+
+        window.addEventListener('ata-branch-select', (e) => {
+            const { ataCode } = e.detail;
+            
+            // Strictly ATA-Twig Association: Fetch all markers sharing the same ATA code
+            const related = this.leftSidebar.markerData.filter(m => 
+                m.ataCode === ataCode
+            );
+            
+            if (related.length > 0) {
+                this.popupManager.show(related, related[0].id);
+                // Hide specific popup if it was showing a different marker
+                this.markerPopup.hide();
+                
+                // SYNC: Tell the right sidebar to update its context if it's currently focused on CR
+                window.dispatchEvent(new CustomEvent('sync-sidebar-context', {
+                    detail: { markerData: related[0] }
+                }));
+            } else {
+                this.popupManager.hide();
             }
         });
 
         window.addEventListener('exit-drilldown', () => {
             this.popupManager.hide();
+            this.markerPopup.hide();
         });
 
-        // 3D Marking Flow Coordination
+        // 3D Marking Flow Coordination: Cleanup ONLY popups to prevent occlusion
         window.addEventListener('enter-drawing-mode', () => {
             this.popupManager.hide();
-            // SpatialView already listens to this to enable drawing
+            this.markerPopup.hide();
+            // Sidebars remain visible as per user request
+        });
+
+        window.addEventListener('exit-interaction-modes', () => {
+            // Restore detail popups if a marker is selected
+            const selectedId = this.leftSidebar.selectedMarkerId;
+            if (selectedId) {
+                const marker = this.leftSidebar.markerData.find(m => m.id === selectedId);
+                if (marker) {
+                    this.toggleRightPanel(true);
+                    this.markerPopup.show(marker);
+                }
+            } else if (this.leftSidebar.selectedBranchId) {
+                // If it was a branch-level focus, restore the summary popup
+                const related = this.leftSidebar.markerData.filter(m => 
+                    m.ataCode === this.leftSidebar.selectedBranchId
+                );
+                if (related.length > 0) {
+                    this.popupManager.show(related, related[0].id);
+                }
+            }
         });
 
         window.addEventListener('confirm-technical-request', () => {

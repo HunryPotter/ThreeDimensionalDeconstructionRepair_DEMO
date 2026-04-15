@@ -27,7 +27,7 @@ export class RecordSidebar {
     this.searchQuery = '';
     this.manualFilterPanelVisible = false;
     this.dateRange = { start: '2026-01-01', end: '2026-04-01' };
-    
+
     this.activeFilters = {
       type: ['全部型别'],
       airline: ['全部航司'],
@@ -35,13 +35,84 @@ export class RecordSidebar {
       registration: ['全部注册号'],
       ata: ['全部ATA'],
       partNo: '',
-      markerQuery: ''
+      markerQuery: '',
+      srQuery: '',
+      crsQuery: ''
     };
 
-    this.activeTab = 'ata-view'; 
+    this.ataHierarchy = [
+      {
+        code: '32', label: '32 起落架', children: [
+          {
+            code: '32-11', label: '32-11 主起落架', children: [
+              { code: '32-11-01', label: '32-11-01 减震支柱' },
+              { code: '32-11-05', label: '32-11-05 起落架车架' }
+            ]
+          },
+          {
+            code: '32-21', label: '32-21 前起落架', children: [
+              { code: '32-21-01', label: '32-21-01 收放支柱' }
+            ]
+          }
+        ]
+      },
+      {
+        code: '52', label: '52 舱门', children: [
+          {
+            code: '52-11', label: '52-11 登机门', children: [
+              { code: '52-11-01', label: '52-11-01 门体结构' },
+              { code: '52-11-10', label: '52-11-10 锁逻辑机构' }
+            ]
+          },
+          {
+            code: '52-71', label: '52-71 起落架舱门', children: [
+              { code: '52-71-01', label: '52-71-01 主起落架舱门' }
+            ]
+          }
+        ]
+      },
+      {
+        code: '53', label: '53 机身', children: [
+          {
+            code: '53-11', label: '53-11 前机身', children: [
+              { code: '53-11-01', label: '53-11-01 下部蒙皮' },
+              { code: '53-11-05', label: '53-11-05 站位隔框' }
+            ]
+          },
+          {
+            code: '53-21', label: '53-21 中机身', children: [
+              { code: '53-21-01', label: '53-21-01 中央翼连接件' }
+            ]
+          }
+        ]
+      },
+      {
+        code: '55', label: '55 安定面', children: [
+          {
+            code: '55-11', label: '55-11 水平安定面', children: [
+              { code: '55-11-01', label: '55-11-01 左侧蒙皮' }
+            ]
+          }
+        ]
+      },
+      {
+        code: '57', label: '57 机翼', children: [
+          {
+            code: '57-11', label: '57-11 中央翼', children: [
+              { code: '57-11-01', label: '57-11-01 前梁' }
+            ]
+          }
+        ]
+      }
+    ];
+
+    this.activeTab = 'ata-view';
     this.selectedMarkerId = null;
     this.selectedTreeNodeId = null;
-    this.selectedBranchId = null; // 显式记录选中的结构树分支
+    this.selectedBranchId = null;
+    this.collapsedAtaGroups = new Set();
+    this.uncheckedMarkerIds = new Set();
+    this.uncheckedAtaNodes = new Set(); // Track hidden ATA chapters/segments
 
     // Utilize MockDataService to generate all markers
     // Pre-defined spatial sites for grouping (all on fuselage)
@@ -69,8 +140,32 @@ export class RecordSidebar {
   selectRecord(id) {
     this.selectedMarkerId = id || null;
     this.selectedTreeNodeId = id || null;
-    this.selectedBranchId = null; // 选中具体记录时，标记已脱离“分支选中”状态
+    this.selectedBranchId = null;
+
+    if (id) {
+      const marker = this.markerData.find(m => m.id === id);
+      if (marker && marker.ataCode) {
+        const parts = marker.ataCode.split('-');
+        // Auto-expand parents: Chapter (32), Section (32-11)
+        if (parts.length >= 1) this.collapsedAtaGroups.delete(parts[0]);
+        if (parts.length >= 2) this.collapsedAtaGroups.delete(`${parts[0]}-${parts[1]}`);
+      }
+    }
+
     this.render();
+
+    // Focal Scroll to target record
+    if (id) {
+      setTimeout(() => {
+        const el = this.container.querySelector(`.record-item[data-id="${id}"]`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Subtle high-tech highlight
+          el.style.backgroundColor = 'rgba(0, 82, 217, 0.1)';
+          setTimeout(() => el.style.backgroundColor = '', 1500);
+        }
+      }, 50);
+    }
   }
 
   render() {
@@ -82,7 +177,7 @@ export class RecordSidebar {
     } else {
       this.drillDownView.render();
     }
-    
+
     this.dispatchDataUpdate();
     this.initCommonEvents();
 
@@ -98,23 +193,43 @@ export class RecordSidebar {
 
     const currentData = this.markerData.filter(item => {
       const matchesSearch = item.id.toLowerCase().includes(this.searchQuery.toLowerCase()) || (item.title && item.title.toLowerCase().includes(this.searchQuery.toLowerCase()));
-      const { type: aircraftTypeFilter, airline, ata, partNo, markerQuery } = this.activeFilters;
-      
+      const { type: aircraftTypeFilter, airline, ata, partNo, markerQuery, srQuery, crsQuery } = this.activeFilters;
+
       const matchesBreadcrumbType = !aircraftTypeFilter || aircraftTypeFilter.includes('全部型别') || aircraftTypeFilter.includes(item.aircraftType);
       const matchesBreadcrumbAirline = !airline || airline.includes('全部航司') || airline.includes(item.airline);
-      const matchesBreadcrumbAta = !ata || ata.includes('全部ATA') || ata.includes(item.ataCode);
-      
+      const matchesBreadcrumbAta = !ata || ata.includes('全部ATA') || ata.some(selectedAta => item.ataCode.startsWith(selectedAta));
+
       // Part Number Search: Check in all associated CRS records
-      const matchesBreadcrumbPartNo = !partNo || (item.srRecords || []).some(sr => 
-        (sr.crsRecords || []).some(crs => 
+      const matchesBreadcrumbPartNo = !partNo || (item.srRecords || []).some(sr =>
+        (sr.crsRecords || []).some(crs =>
           (crs.partNos || []).some(p => p.toLowerCase().includes(partNo.toLowerCase()))
         )
       );
 
       // Marker ID/Title Search
-      const matchesBreadcrumbMarker = !markerQuery || 
-        item.id.toLowerCase().includes(markerQuery.toLowerCase()) || 
+      const matchesBreadcrumbMarker = !markerQuery ||
+        item.id.toLowerCase().includes(markerQuery.toLowerCase()) ||
         (item.title && item.title.toLowerCase().includes(markerQuery.toLowerCase()));
+
+      // SR Search
+      const matchesSR = (() => {
+        if (!srQuery) return true;
+        const q = srQuery.toLowerCase();
+        return item.srRecords && item.srRecords.some(sr => 
+          sr.id.toLowerCase().includes(q) || (sr.title && sr.title.toLowerCase().includes(q))
+        );
+      })();
+
+      // CRS Search
+      const matchesCRS = (() => {
+        if (!crsQuery) return true;
+        const q = crsQuery.toLowerCase();
+        return item.srRecords && item.srRecords.some(sr => 
+          sr.crsRecords && sr.crsRecords.some(crs => 
+            crs.id.toLowerCase().includes(q) || (crs.title && crs.title.toLowerCase().includes(q))
+          )
+        );
+      })();
 
       const matchesType = this.selectedTypeLabels.length === 0 || item.typeLabels.some(l => this.selectedTypeLabels.includes(l));
       const manualStatus = item.srRecords && item.srRecords[0] ? item.srRecords[0].manualStatus : 'none';
@@ -124,7 +239,7 @@ export class RecordSidebar {
 
       const isEditing = this.editingId === item.id;
 
-      return !isEditing && matchesSearch && matchesBreadcrumbType && matchesBreadcrumbAirline && matchesBreadcrumbAta && matchesBreadcrumbPartNo && matchesBreadcrumbMarker && (item.isUserMarkup || (matchesType && matchesManual && matchesDate)) && (!this.filter3D || item.has3D);
+      return !isEditing && matchesSearch && matchesBreadcrumbType && matchesBreadcrumbAirline && matchesBreadcrumbAta && matchesBreadcrumbPartNo && matchesBreadcrumbMarker && matchesSR && matchesCRS && (item.isUserMarkup || (matchesType && matchesManual && matchesDate)) && (!this.filter3D || item.has3D);
     });
 
     window.dispatchEvent(new CustomEvent('records-updated', {
@@ -164,6 +279,18 @@ export class RecordSidebar {
         if (this.activeFilters[key] !== undefined && JSON.stringify(this.activeFilters[key]) !== JSON.stringify(newData[key])) {
           this.activeFilters[key] = newData[key];
           changed = true;
+          
+          // Auto-expand tree when ATA filter changes
+          if (key === 'ata' && Array.isArray(newData[key])) {
+             newData[key].forEach(ataCode => {
+                if (ataCode !== '全部ATA') {
+                   const parts = ataCode.split('-');
+                   if (parts.length >= 1) this.collapsedAtaGroups.delete(parts[0]);
+                   if (parts.length >= 2) this.collapsedAtaGroups.delete(`${parts[0]}-${parts[1]}`);
+                   if (parts.length >= 3) this.collapsedAtaGroups.delete(ataCode);
+                }
+             });
+          }
         }
       });
       if (changed) {
@@ -186,16 +313,24 @@ export class RecordSidebar {
         return;
       }
 
-      let ataCode = '32';
-      let ataLabel = 'ATA 32(起落架)'; 
-      let subBranch = '通用分段';
+      let ataCode = detail.ataCode || targetNodeId;
+      let ataLabel = `ATA ${ataCode}`;
 
-      if (targetNodeId && targetNodeId.includes('-')) {
-        const parts = targetNodeId.split('-');
-        ataCode = parts[0];
-        subBranch = parts[1];
-      } else if (targetNodeId) {
-        ataCode = targetNodeId;
+      // Better label lookup
+      const findAtaLabel = (nodes, code) => {
+        for (const n of nodes) {
+          if (n.code === code) return n.label;
+          if (n.children) {
+            const found = findAtaLabel(n.children, code);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+
+      const matchedLabel = findAtaLabel(this.ataHierarchy, ataCode);
+      if (matchedLabel) {
+        ataLabel = `ATA ${ataCode} ${matchedLabel.split(' ').pop()}`;
       }
 
       if (editingId) {
@@ -214,29 +349,50 @@ export class RecordSidebar {
       if (existing) ataLabel = existing.ataLabel;
 
       const newId = `U-${Math.floor(1000 + Math.random() * 9000)}`;
+      const aircraft = detail.associatedAircraft && detail.associatedAircraft.length > 0
+        ? detail.associatedAircraft[0]
+        : { msn: '10001', registration: 'B91901P' };
 
       const newMarker = {
         id: newId,
         title: detail.title || '自定义零部件标记',
-        typeLabels: [],
-        aircraftType: '基本型',
-        airline: '中国东航',
+        typeLabels: ['其他'],
+        aircraftType: this.activeFilters.type[0] === '全部型别' ? '基本型' : this.activeFilters.type[0],
+        airline: this.activeFilters.airline[0] === '全部航司' ? '中国东航' : this.activeFilters.airline[0],
         ataCode: ataCode,
         ataLabel: ataLabel,
-        subBranch: subBranch,
+        subBranch: '自定义分段',
         has3D: true,
         siteId: `site-user-${newId}`,
         coords: { x: detail.x, y: detail.y },
         date: new Date().toISOString().split('T')[0],
-        srRecord: null,
+        msn: aircraft.msn,
+        registration: aircraft.registration,
+        srRecords: [],
         crsRecords: [],
         crRecords: [],
-        isUserMarkup: true
+        isUserMarkup: true,
+        associatedAircraft: detail.associatedAircraft // Store all selected aircraft
       };
 
       this.markerData.push(newMarker);
-      this.selectedTreeNodeId = newId;
+      this.selectedMarkerId = newId;
       this.render();
+    });
+
+    window.addEventListener('edit-spatial-marker', (e) => {
+      const marker = e.detail;
+      this.editingId = marker.id;
+      window.dispatchEvent(new CustomEvent('enter-drawing-mode', {
+        detail: {
+          mode: 'local-component',
+          editingId: marker.id,
+          title: marker.title,
+          x: marker.coords.x,
+          y: marker.coords.y,
+          ataCode: marker.ataCode
+        }
+      }));
     });
 
     window.addEventListener('confirm-delete-action', (e) => {
@@ -247,7 +403,7 @@ export class RecordSidebar {
         if (window.app) window.app.toggleRightPanel(false);
       }
       this.render();
-      this.dispatchDataUpdate(); 
+      this.dispatchDataUpdate();
     });
 
     window.addEventListener('refresh-timeline-data', () => {
@@ -291,7 +447,45 @@ export class RecordSidebar {
         else if (dropdownId === 'airline') syncFilter('airline', '全部航司');
         else if (dropdownId === 'msn') syncFilter('msn', '全部MSN');
         else if (dropdownId === 'registration') syncFilter('registration', '全部注册号');
-        else if (dropdownId === 'ata' || dropdownId === 'drill-ata-filter') syncFilter('ata', '全部ATA');
+        else if (dropdownId === 'ata' || dropdownId === 'drill-ata-filter') {
+          // ATA Hierarchical Selection Logic (Internal to Dropdown)
+          const allAtaCodes = [];
+          const collectCodes = (nodes) => nodes.forEach(n => { allAtaCodes.push(n.code); if (n.children) collectCodes(n.children); });
+          collectCodes(this.ataHierarchy);
+
+          const getChildren = (code) => {
+            const children = [];
+            const find = (nodes) => {
+              for (const n of nodes) {
+                if (n.code === code) { if (n.children) collectCodes(n.children, children); return true; }
+                if (n.children && find(n.children)) return true;
+              }
+              return false;
+            };
+            const col = (nodes, list) => nodes.forEach(n => { list.push(n.code); if (n.children) col(n.children, list); });
+            const f = (nodes) => {
+               for(const n of nodes) {
+                  if(n.code === code) { if(n.children) col(n.children, children); return true; }
+                  if(n.children && f(n.children)) return true;
+               }
+               return false;
+            }
+            f(this.ataHierarchy);
+            return children;
+          };
+
+          const targetCodes = [val, ...getChildren(val)];
+          let currentAta = [...this.activeFilters.ata].filter(v => v !== '全部ATA');
+
+          if (isChecked) {
+            targetCodes.forEach(c => { if (!currentAta.includes(c)) currentAta.push(c); });
+          } else {
+            currentAta = currentAta.filter(v => !targetCodes.includes(v));
+          }
+          
+          if (currentAta.length === 0) currentAta = ['全部ATA'];
+          this.activeFilters.ata = currentAta;
+        }
         else if (dropdownId === 'drill-manual-filter') {
           if (val === 'all') this.selectedManualStatuses = ['published', 'unpublished', 'none'];
           else {
@@ -309,7 +503,6 @@ export class RecordSidebar {
             else this.selectedTypeLabels = this.selectedTypeLabels.filter(t => t !== val);
           }
         }
-
         window.dispatchEvent(new CustomEvent('filter-change', { detail: this.activeFilters }));
         this.render();
       });
@@ -319,6 +512,39 @@ export class RecordSidebar {
     if (this.view === 'drilldown' && this.activeTab === 'ata-view') {
       this.ataTreeViewInstance.initEvents();
     }
+
+    // Post-render: Set indeterminate state for ATA Filter Dropdown
+    this.syncAtaIndeterminateState();
+  }
+
+  syncAtaIndeterminateState() {
+    const ataCheckboxes = this.container.querySelectorAll('.multi-select-cb[data-dropdown*="ata"]');
+    const selectedAtas = this.activeFilters.ata;
+
+    const getStatus = (node) => {
+      const isSelected = selectedAtas.includes(node.code);
+      if (!node.children || node.children.length === 0) {
+        return isSelected ? 'checked' : 'unchecked';
+      }
+      const childrenStatuses = node.children.map(getStatus);
+      if (childrenStatuses.every(s => s === 'checked')) return 'checked';
+      if (childrenStatuses.some(s => s === 'checked' || s === 'indeterminate')) return 'indeterminate';
+      return isSelected ? 'checked' : 'unchecked';
+    };
+
+    const updateRecursive = (nodes) => {
+      nodes.forEach(node => {
+        const status = getStatus(node);
+        const cb = this.container.querySelector(`.multi-select-cb[value="${node.code}"][data-dropdown*="ata"]`);
+        if (cb) {
+          cb.indeterminate = (status === 'indeterminate');
+          cb.checked = (status === 'checked');
+        }
+        if (node.children) updateRecursive(node.children);
+      });
+    };
+
+    updateRecursive(this.ataHierarchy);
   }
 
   renderDropdownField(id, label, options, selectedValues) {
@@ -327,6 +553,10 @@ export class RecordSidebar {
       : selectedValues.length === 1 ? selectedValues[0] : `${selectedValues[0]} 等${selectedValues.length}项`;
 
     const isOpen = this.openDropdownId === id;
+
+    if (id.includes('ata')) {
+      return this.renderAtaCascadingSelect(id, label, selectedValues);
+    }
 
     return `
         <div class="filter-row" style="position: relative; z-index: ${isOpen ? 2000 : 1};">
@@ -350,8 +580,87 @@ export class RecordSidebar {
       `;
   }
 
+  renderAtaCascadingSelect(id, label, selectedValues) {
+    const isOpen = this.openDropdownId === id;
+    const selectedText = selectedValues.includes('全部ATA') ? '全部ATA' : (selectedValues.length === 1 ? selectedValues[0] : `${selectedValues[0]}...`);
+
+    const renderLayer = (nodes) => {
+      return `
+        <div class="ata-cascade-menu" style="min-width: 180px;">
+          ${nodes.map(node => {
+        const hasChildren = node.children && node.children.length > 0;
+        const isSelected = selectedValues.includes(node.code);
+        return `
+              <div class="ata-cascade-item">
+                <label style="display: flex; align-items: center; padding: 8px 12px; gap: 10px; cursor: pointer; justify-content: space-between;">
+                  <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;">
+                    <input type="checkbox" class="multi-select-cb" data-dropdown="${id}" value="${node.code}" ${isSelected ? 'checked' : ''} style="margin: 0;">
+                    <span class="ata-code-label" style="font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; ${isSelected ? 'color: var(--primary-blue); font-weight: 600;' : 'color: #334155;'}">${node.label}</span>
+                  </div>
+                  ${hasChildren ? '<span style="font-size: 10px; color: #94a3b8;">▶</span>' : ''}
+                </label>
+                ${hasChildren ? `
+                  <div class="ata-cascade-layer">
+                    ${renderLayer(node.children)}
+                  </div>
+                ` : ''}
+              </div>
+            `;
+      }).join('')}
+        </div>
+      `;
+    };
+
+    return `
+      <div class="filter-row cascading" style="position: relative; z-index: ${isOpen ? 2000 : 1};">
+        <span class="label">${label}</span>
+        <div class="custom-dropdown" data-id="${id}" style="width: 150px;">
+          <div class="dropdown-header" style="width: 100%; padding: 4px 8px; border: 1px solid ${isOpen ? 'var(--primary-blue)' : '#e2e8f0'}; border-radius: 6px; background: white; font-size: 11px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #1e293b;">${selectedText}</span>
+            <span style="font-size: 10px; color: #64748b;">${isOpen ? '▲' : '▼'}</span>
+          </div>
+          ${isOpen ? `
+          <div class="dropdown-list ata-cascade-container" style="position: absolute; top: calc(100% + 4px); left: 0; background: white; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.15); z-index: 2000; padding: 4px 0;">
+            <label style="display: flex; align-items: center; padding: 10px 14px; gap: 10px; cursor: pointer; font-size: 11.5px; border-bottom: 1px solid #f1f5f9; background: #f8fafc; color: #1e293b;">
+              <input type="checkbox" class="multi-select-cb" data-dropdown="${id}" value="全部ATA" ${selectedValues.includes('全部ATA') ? 'checked' : ''} style="margin: 0;">
+              <span style="font-weight: 600;">全部 ATA 章节</span>
+            </label>
+            <div class="ata-cascade-root">
+              ${renderLayer(this.ataHierarchy)}
+            </div>
+          </div>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
   renderAtaGroups() {
     return this.ataTreeViewInstance.render();
+  }
+
+  getFilteredAircraftList() {
+    const { type: typeFilter, airline: airlineFilter } = this.activeFilters;
+    const aircraftMap = new Map();
+
+    this.markerData.forEach(item => {
+      const matchesType = typeFilter.includes('全部型别') || typeFilter.includes(item.aircraftType);
+      const matchesAirline = airlineFilter.includes('全部航司') || airlineFilter.includes(item.airline);
+
+      if (matchesType && matchesAirline) {
+        const key = `${item.msn}-${item.registration}`;
+        if (!aircraftMap.has(key)) {
+          aircraftMap.set(key, {
+            type: item.aircraftType,
+            airline: item.airline,
+            msn: item.msn,
+            registration: item.registration,
+            label: `${item.msn} (${item.registration})`
+          });
+        }
+      }
+    });
+
+    return Array.from(aircraftMap.values());
   }
 
   getFilteredMarkers() {
@@ -365,16 +674,16 @@ export class RecordSidebar {
       const { type: aircraftTypeFilter, airline, ata, partNo, markerQuery } = this.activeFilters;
       const matchesBreadcrumbType = !aircraftTypeFilter || aircraftTypeFilter.includes('全部型别') || aircraftTypeFilter.includes(item.aircraftType);
       const matchesBreadcrumbAirline = !airline || airline.includes('全部航司') || airline.includes(item.airline);
-      const matchesBreadcrumbAta = !ata || ata.includes('全部ATA') || ata.includes(item.ataCode);
-      
-      const matchesBreadcrumbPartNo = !partNo || (item.srRecords || []).some(sr => 
-        (sr.crsRecords || []).some(crs => 
+      const matchesBreadcrumbAta = !ata || ata.includes('全部ATA') || ata.some(selectedAta => item.ataCode.startsWith(selectedAta));
+
+      const matchesBreadcrumbPartNo = !partNo || (item.srRecords || []).some(sr =>
+        (sr.crsRecords || []).some(crs =>
           (crs.partNos || []).some(p => p.toLowerCase().includes(partNo.toLowerCase()))
         )
       );
 
-      const matchesBreadcrumbMarker = !markerQuery || 
-        item.id.toLowerCase().includes(markerQuery.toLowerCase()) || 
+      const matchesBreadcrumbMarker = !markerQuery ||
+        item.id.toLowerCase().includes(markerQuery.toLowerCase()) ||
         (item.title && item.title.toLowerCase().includes(markerQuery.toLowerCase()));
 
       const matchesType = this.selectedTypeLabels.length === 0 || item.typeLabels.some(l => this.selectedTypeLabels.includes(l));
@@ -422,16 +731,16 @@ export class RecordSidebar {
       const { type: aircraftTypeFilter, airline, ata, partNo, markerQuery } = this.activeFilters;
       const matchesBreadcrumbType = !aircraftTypeFilter || aircraftTypeFilter.includes('全部型别') || aircraftTypeFilter.includes(item.aircraftType);
       const matchesBreadcrumbAirline = !airline || airline.includes('全部航司') || airline.includes(item.airline);
-      const matchesBreadcrumbAta = !ata || ata.includes('全部ATA') || ata.includes(item.ataCode);
-      
-      const matchesBreadcrumbPartNo = !partNo || (item.srRecords || []).some(sr => 
-        (sr.crsRecords || []).some(crs => 
+      const matchesBreadcrumbAta = !ata || ata.includes('全部ATA') || ata.some(selectedAta => item.ataCode.startsWith(selectedAta));
+
+      const matchesBreadcrumbPartNo = !partNo || (item.srRecords || []).some(sr =>
+        (sr.crsRecords || []).some(crs =>
           (crs.partNos || []).some(p => p.toLowerCase().includes(partNo.toLowerCase()))
         )
       );
 
-      const matchesBreadcrumbMarker = !markerQuery || 
-        item.id.toLowerCase().includes(markerQuery.toLowerCase()) || 
+      const matchesBreadcrumbMarker = !markerQuery ||
+        item.id.toLowerCase().includes(markerQuery.toLowerCase()) ||
         (item.title && item.title.toLowerCase().includes(markerQuery.toLowerCase()));
 
       const matchesType = this.selectedTypeLabels.length === 0 || item.typeLabels.some(l => this.selectedTypeLabels.includes(l));
@@ -449,6 +758,7 @@ export class RecordSidebar {
     }
 
     const columns = [
+      { label: '序号', field: 'index' },
       { label: '损伤编号', field: 'id' },
       { label: '名称', field: 'title' },
       { label: '发现日期', field: 'date' },
@@ -458,13 +768,14 @@ export class RecordSidebar {
       { label: '航司', field: 'airline' }
     ];
 
-    const exportData = filteredItems.map(item => ({
+    const exportData = filteredItems.map((item, idx) => ({
       ...item,
+      index: idx + 1,
       subBranch: item.subBranch || '通用分段',
       ataLabel: item.ataLabel || `ATA ${item.ataCode}`
     }));
 
     const timestamp = new Date().toISOString().split('T')[0];
-    ExportUtils.exportToCSV(exportData, columns, `Damage_Records_${timestamp}.csv`);
+    ExportUtils.exportToExcel(exportData, columns, `Damage_Records_${timestamp}.xlsx`);
   }
 }

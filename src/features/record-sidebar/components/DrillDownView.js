@@ -33,11 +33,11 @@ export class DrillDownView {
         <!-- Search & Tools Section -->
         <div class="search-tool-area filter-section" style="padding: 12px 16px; border-bottom: 1px solid rgba(0,0,0,0.06); margin-bottom: 4px; background: rgba(245,245,245,0.3);">
           
-          ${sidebar.renderDropdownField('drill-manual-filter', '超手册评估', [
+          ${sidebar.renderDropdownField('drill-manual-filter', '飞机状态', [
             { label: '全部状态', value: 'all' },
-            { label: '已发布', value: 'published' },
-            { label: '未发布', value: 'unpublished' },
-            { label: '无状态', value: 'none' }
+            { label: '运行中', value: 'published' },
+            { label: '故障停场', value: 'unpublished' },
+            { label: '定检改装', value: 'none' }
           ], sidebar.selectedManualStatuses.length === 3 ? ['all'] : sidebar.selectedManualStatuses)}
           
           ${sidebar.renderDropdownField('drill-type-filter', '损伤分类', [
@@ -56,15 +56,29 @@ export class DrillDownView {
           
           <div class="filter-row">
             <span class="label">件号模糊</span>
-            <div class="search-box" style="margin: 0; width: 150px; box-sizing: border-box; padding: 4px 8px;">
+            <div class="search-box" style="margin: 0; width: 150px; box-sizing: border-box;">
               <input type="text" placeholder="输入件号搜索..." id="drill-part-search" value="${sidebar.activeFilters.partNo}">
             </div>
           </div>
 
           <div class="filter-row">
             <span class="label">损伤标记模糊</span>
-            <div class="search-box" style="margin: 0; width: 150px; box-sizing: border-box; padding: 4px 8px;">
+            <div class="search-box" style="margin: 0; width: 150px; box-sizing: border-box;">
               <input type="text" placeholder="输入编号/标题..." id="drill-marker-search" value="${sidebar.activeFilters.markerQuery}">
+            </div>
+          </div>
+
+          <div class="filter-row">
+            <span class="label">SR 查询</span>
+            <div class="search-box" style="margin: 0; width: 150px; box-sizing: border-box;">
+              <input type="text" placeholder="输入 SR 编号..." id="drill-sr-search" value="${sidebar.activeFilters.srQuery}">
+            </div>
+          </div>
+
+          <div class="filter-row">
+            <span class="label">CRS 查询</span>
+            <div class="search-box" style="margin: 0; width: 150px; box-sizing: border-box;">
+              <input type="text" placeholder="输入 CRS 编号..." id="drill-crs-search" value="${sidebar.activeFilters.crsQuery}">
             </div>
           </div>
           
@@ -133,6 +147,8 @@ export class DrillDownView {
         sidebar.activeFilters.ata = ['全部ATA'];
         sidebar.activeFilters.partNo = '';
         sidebar.activeFilters.markerQuery = '';
+        sidebar.activeFilters.srQuery = '';
+        sidebar.activeFilters.crsQuery = '';
         sidebar.render();
         window.dispatchEvent(new CustomEvent('filter-change', { detail: sidebar.activeFilters }));
       });
@@ -173,7 +189,14 @@ export class DrillDownView {
           return;
         }
         
-        window.dispatchEvent(new CustomEvent('enter-drawing-mode', { detail: { mode: 'local-component' } }));
+        // New: Trigger Aircraft Selection Dialog before entering drawing mode
+        const aircraftList = sidebar.getFilteredAircraftList();
+        window.dispatchEvent(new CustomEvent('request-aircraft-selection', {
+          detail: {
+            list: aircraftList,
+            context: { mode: 'local-component', ataCode: sidebar.selectedBranchId }
+          }
+        }));
       });
     }
 
@@ -201,6 +224,26 @@ export class DrillDownView {
     if (markerSearch) {
       markerSearch.addEventListener('input', (e) => {
         sidebar.activeFilters.markerQuery = e.target.value;
+        window.dispatchEvent(new CustomEvent('filter-change', { detail: sidebar.activeFilters }));
+        sidebar.render();
+      });
+    }
+
+    // Search input for SR
+    const srSearch = sidebar.container.querySelector('#drill-sr-search');
+    if (srSearch) {
+      srSearch.addEventListener('input', (e) => {
+        sidebar.activeFilters.srQuery = e.target.value;
+        window.dispatchEvent(new CustomEvent('filter-change', { detail: sidebar.activeFilters }));
+        sidebar.render();
+      });
+    }
+
+    // Search input for CRS
+    const crsSearch = sidebar.container.querySelector('#drill-crs-search');
+    if (crsSearch) {
+      crsSearch.addEventListener('input', (e) => {
+        sidebar.activeFilters.crsQuery = e.target.value;
         window.dispatchEvent(new CustomEvent('filter-change', { detail: sidebar.activeFilters }));
         sidebar.render();
       });

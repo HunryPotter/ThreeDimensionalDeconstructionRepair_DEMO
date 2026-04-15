@@ -12,14 +12,40 @@ export class DetailSidebar {
   initEvents() {
     window.addEventListener('damage-marker-select', (e) => {
       this.markerData = e.detail;
-      // Default to the first SR in the list when marker changes
+      const { forceTab, targetSrId } = e.detail;
+
       if (this.markerData && this.markerData.srRecords && this.markerData.srRecords.length > 0) {
-        this.selectedSrId = this.markerData.srRecords[0].id;
-        this.activeInnerTab = 'SR';
+        // Use forced SR or default to first
+        this.selectedSrId = targetSrId || this.markerData.srRecords[0].id;
+        // Use forced tab or default to SR
+        this.activeInnerTab = forceTab || 'SR';
       } else {
         this.selectedSrId = null;
       }
       this.render();
+    });
+
+    // Remote activation of specific views (e.g. from 3D Popups)
+    window.addEventListener('show-sidebar-detail', (e) => {
+      if (e.detail.type === 'CR') {
+        if (e.detail.markerData) {
+          this.markerData = e.detail.markerData;
+        }
+        this.activeInnerTab = 'CR';
+        if (window.app) window.app.toggleRightPanel(true);
+        this.render();
+      }
+    });
+
+    // Handle context synchronization when switching ATA branches in the tree
+    window.addEventListener('sync-sidebar-context', (e) => {
+      if (e.detail.markerData) {
+        this.markerData = e.detail.markerData;
+        // Only trigger an immediate re-render if the user is already looking at CR info
+        if (this.activeInnerTab === 'CR') {
+          this.render();
+        }
+      }
     });
   }
 
@@ -61,47 +87,38 @@ export class DetailSidebar {
     
     // Tab availability rules:
     // 1. SR tab: Always available if SRs exist
-    // 2. CRS tab: Only if selected SR has at least 1 CRS
-    // 3. CR tab: Only if selected SR has at least 1 CRS (as per business feedback)
+    // 2. CRS tab: Only if selected SR has CRS AND status is not 'none'
     const hasSr = !!selectedSr;
-    const hasCrs = hasSr && selectedSr.crsRecords && selectedSr.crsRecords.length > 0;
-    const hasCr = hasCrs && data.crRecords && data.crRecords.length > 0; // Shared CR data but gated by CRS presence
+    const hasCrs = hasSr && selectedSr.manualStatus !== 'none' && selectedSr.crsRecords && selectedSr.crsRecords.length > 0;
+    const hasCr = data.crRecords && data.crRecords.length > 0; // CR is now a top-level component association
 
     // Validate active tab and force back to SR if current tab becomes invalid
     if (this.activeInnerTab === 'CRS' && !hasCrs) this.activeInnerTab = 'SR';
-    if (this.activeInnerTab === 'CR' && !hasCr) this.activeInnerTab = 'SR';
+    if (this.activeInnerTab === 'CR' && !hasCr) {
+       // Only force back if we weren't explicitly told to show CR
+       this.activeInnerTab = 'SR';
+    }
 
     const damageTypeBadge = data.typeLabels ? data.typeLabels.join(' & ') : '未知损伤';
 
-    // Tabs HTML
-    const tabsHtml = `
-      <div class="inner-tabs">
-        <div class="inner-tab ${this.activeInnerTab === 'SR' ? 'active' : ''} ${!hasSr ? 'disabled' : ''}" data-tab="SR">SR</div>
-        <div class="inner-tab ${this.activeInnerTab === 'CRS' ? 'active' : ''} ${!hasCrs ? 'disabled' : ''}" data-tab="CRS">CRS</div>
-        <div class="inner-tab ${this.activeInnerTab === 'CR' ? 'active' : ''} ${!hasCr ? 'disabled' : ''}" data-tab="CR">CR</div>
-      </div>
-    `;
+    // Context-aware Header Titles
+    const typeMap = {
+      'SR': 'SR 技术请求',
+      'CRS': 'CRS 修理方案',
+      'CR': 'CR 让步信息'
+    };
+    const currentTypeLabel = typeMap[this.activeInnerTab] || '单据详情';
+    const currentId = (this.activeInnerTab === 'CR') ? '综合评估' : (this.activeInnerTab === 'SR' ? (selectedSr?.id || 'N/A') : (selectedSr?.crsRecords[0]?.id || 'N/A'));
 
     let contentHtml = '';
 
     if (this.activeInnerTab === 'SR' && hasSr) {
-      const srSelector = data.srRecords.length > 1 ? `
-        <div class="sr-selector-box">
-          <label>查看关联单据</label>
-          <select id="sr-select-dropdown" class="tech-select">
-            ${data.srRecords.map(sr => `<option value="${sr.id}" ${sr.id === this.selectedSrId ? 'selected' : ''}>${sr.id} (${sr.manualStatus === 'published' ? '已发布' : '处理中'})</option>`).join('')}
-          </select>
-        </div>
-      ` : '';
-
       contentHtml = `
         <div class="tab-pane active" id="pane-sr">
-          ${srSelector}
           <section class="info-section">
             <h4 class="section-title">SR 基础信息</h4>
             <div class="info-grid">
               <div class="info-row"><span class="label">SR 编号:</span><span class="value highlight">${selectedSr.id}</span></div>
-              <div class="info-row"><span class="label">发布状态:</span><span class="value">${selectedSr.manualStatus === 'published' ? '已发布' : (selectedSr.manualStatus === 'unpublished' ? '未发布' : '无')}</span></div>
               <div class="info-row"><span class="label">机型:</span><span class="value">C919 (${data.aircraftType})</span></div>
               <div class="info-row"><span class="label">优先级:</span><span class="value status-red">Critical</span></div>
               <div class="info-row"><span class="label">客户:</span><span class="value">${data.airline}</span></div>
@@ -123,6 +140,7 @@ export class DetailSidebar {
         </div>
       `;
     } else if (this.activeInnerTab === 'CRS' && hasCrs) {
+      const isPublished = selectedSr.manualStatus === 'published';
       contentHtml = `
         <div class="tab-pane active" id="pane-crs">
           ${selectedSr.crsRecords.map(crs => `
@@ -132,35 +150,41 @@ export class DetailSidebar {
               <div class="info-grid">
                 <div class="info-row"><span class="label">CRS编号:</span><span class="value highlight">${crs.id}</span></div>
                 <div class="info-row"><span class="label">状态:</span><span class="value status-green" style="font-weight: 600;">${crs.status}</span></div>
+                <div class="info-row"><span class="label">超手册状态:</span><span class="value">${selectedSr.manualStatus === 'published' ? '已发布' : '待处理'}</span></div>
                 <div class="info-row"><span class="label">版本:</span><span class="value">${crs.version || 'A'}</span></div>
                 <div class="info-block">
                   <span class="label">CRS名称:</span>
                   <span class="value semi-bold multiline">${crs.title}</span>
                 </div>
                 <div class="info-row"><span class="label">关联SR:</span><span class="value highlight sm">${selectedSr.id}</span></div>
-                <div class="info-row"><span class="label">ATA:</span><span class="value">${data.ataCode || '--'}</span></div>
               </div>
             </section>
             
-            <!-- Damage Component Info -->
-            <section class="info-section">
-              <h4 class="section-title">损伤详情</h4>
-              <div class="info-grid">
-                <div class="info-row"><span class="label">SRM号:</span><span class="value">${crs.srmId || '--'}</span></div>
-                <div class="info-row"><span class="label">损伤分类:</span><span class="value status-red bold">${crs.damageType || damageTypeBadge}</span></div>
-                <div class="info-block" style="margin-top: 8px;">
-                  <span class="label">关联零组件:</span>
-                  <div class="part-list">
-                    ${(crs.partNos || []).map(p => `
-                      <div class="part-item">
-                        <span class="part-no">${p}</span>
-                        <button class="btn-outline-view">查看3D定位</button>
-                      </div>
-                    `).join('')}
+            ${isPublished ? `
+              <!-- Damage Component Info -->
+              <section class="info-section">
+                <h4 class="section-title">损伤详情</h4>
+                <div class="info-grid">
+                  <div class="info-row"><span class="label">SRM号:</span><span class="value">${crs.srmId || '--'}</span></div>
+                  <div class="info-row"><span class="label">损伤分类:</span><span class="value status-red bold">${crs.damageType || damageTypeBadge}</span></div>
+                  <div class="info-block" style="margin-top: 8px;">
+                    <span class="label">关联零组件:</span>
+                    <div class="part-list">
+                      ${(crs.partNos || []).map(p => `
+                        <div class="part-item">
+                          <span class="part-no">${p}</span>
+                          <button class="btn-outline-view">查看3D定位</button>
+                        </div>
+                      `).join('')}
+                    </div>
                   </div>
                 </div>
+              </section>
+            ` : `
+              <div class="problem-box sm" style="text-align: center; border-style: dashed; padding: 20px;">
+                <div class="box-text muted italic">—— 详细工程方案信息待发布 ——</div>
               </div>
-            </section>
+            `}
           `).join('')}
         </div>
       `;
@@ -193,25 +217,23 @@ export class DetailSidebar {
         <div class="sidebar-header">
           <div class="header-left">
             <button class="btn-close-right">×</button>
-            <strong class="header-title">${data.id && data.id !== 'N/A' ? data.id : '单据详细视图'}</strong>
+            <strong class="header-title"><span class="header-type-tag">[${currentTypeLabel}]</span> ${currentId}</strong>
           </div>
           <span class="case-tag clickable" onclick="window.dispatchEvent(new CustomEvent('initiate-technical-request'))" title="在流程系统中查看完整关联信息">CASE系统</span>
         </div>
         
         <div class="details-content" style="padding: 16px;">
           <!-- Damage Summary Info (Content Layer) -->
-          <div class="damage-summary" style="margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px dashed rgba(0,0,0,0.08);">
-            <div style="font-size: 11px; color: var(--text-color-secondary); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
+          <div class="damage-summary" style="margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px dashed rgba(0,0,0,0.08);">
+            <div style="font-size: 11px; color: var(--text-color-secondary); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
               <span style="background: rgba(239, 68, 68, 0.1); color: #ef4444; padding: 2px 6px; border-radius: 4px; font-weight: 600;">损伤类型：${damageTypeBadge}</span>
             </div>
             <div style="font-size: 13px; color: var(--text-color-main); font-weight: 600; line-height: 1.4;">${data.title || '无标题记录'}</div>
           </div>
-          
-          ${tabsHtml}
-
-          <div class="tab-content" style="margin-top: 16px;">
-            ${contentHtml}
-          </div>
+  
+           <div class="tab-content">
+             ${contentHtml}
+           </div>
         </div>
 
         <!-- Panel Toggle Bookmark (Left Edge, Middle) -->
@@ -221,22 +243,7 @@ export class DetailSidebar {
       </div>
     `;
 
-    // Local event bindings for tabs
-    const tabEls = this.container.querySelectorAll('.inner-tab:not(.disabled)');
-    tabEls.forEach(el => {
-      el.addEventListener('click', () => {
-        this.activeInnerTab = el.dataset.tab;
-        this.renderMarkerView();
-      });
-    });
-
-    const srDropdown = this.container.querySelector('#sr-select-dropdown');
-    if (srDropdown) {
-      srDropdown.addEventListener('change', (e) => {
-        this.selectedSrId = e.target.value;
-        this.renderMarkerView();
-      });
-    }
+    // Removed tab event listeners as per redesign
 
     const closeBtn = this.container.querySelector('.btn-close-right');
     if (closeBtn) {
@@ -385,6 +392,17 @@ export class DetailSidebar {
         color: var(--text-color-main);
         font-weight: 600;
         letter-spacing: 0.2px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .header-type-tag {
+        font-size: 11px;
+        color: var(--primary-blue);
+        font-weight: 800;
+        background: rgba(0, 82, 217, 0.05);
+        padding: 2px 6px;
+        border-radius: 4px;
       }
       
       .case-tag {
@@ -415,10 +433,10 @@ export class DetailSidebar {
       .details-content {
         flex: 1;
         overflow-y: auto;
-        padding: 18px 16px;
+        padding: 16px;
         display: flex;
         flex-direction: column;
-        gap: 24px;
+        gap: 16px;
       }
       
       .info-section {
@@ -441,8 +459,8 @@ export class DetailSidebar {
         display: flex;
         background: rgba(0, 0, 0, 0.04);
         border-radius: 6px;
-        padding: 4px;
-        margin-bottom: 8px;
+        padding: 3px;
+        margin-bottom: 2px;
         border: 1px solid rgba(0, 0, 0, 0.05);
       }
       
@@ -687,7 +705,7 @@ export class DetailSidebar {
         border: 1px solid rgba(0, 82, 217, 0.1);
         border-radius: 8px;
         padding: 10px;
-        margin-bottom: 20px;
+        margin-bottom: 12px;
         display: flex;
         flex-direction: column;
         gap: 6px;

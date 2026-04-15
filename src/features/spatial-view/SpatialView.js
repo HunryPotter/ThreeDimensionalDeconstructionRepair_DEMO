@@ -157,6 +157,33 @@ export class SpatialView {
           </div>
         </div>
 
+        <!-- Aircraft Selection Dialog for 3D Marking -->
+        <div id="aircraft-selection-popup" class="confirm-dialog secondary-dialog" style="display: none; min-width: 320px;">
+          <div class="confirm-header">关联架次选择</div>
+          <div class="confirm-body" style="background: #f8fafc; padding: 16px;">
+            <p style="font-size: 12px; color: #64748b; margin-bottom: 12px; font-weight: 500;">请选择受此损伤标记关联的架次（支持多选）：</p>
+            <div id="aircraft-multiselect-list" style="max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
+              <!-- Dynamic List -->
+            </div>
+          </div>
+          <div class="confirm-footer" style="padding: 12px 16px; background: white;">
+            <button id="btn-aircraft-cancel" class="btn-cancel" style="flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; background: white; color: #64748b; font-size: 13px; font-weight: 600; cursor: pointer;">取消</button>
+            <button id="btn-aircraft-confirm" class="btn-confirm primary" style="flex: 1.5; padding: 10px; border-radius: 8px; border: none; background: #0052d9; color: white; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 10px rgba(0, 82, 217, 0.2);">确认并进入标注</button>
+          </div>
+        </div>
+
+        <!-- Generic Confirmation Dialog -->
+        <div id="generic-confirm-popup" class="confirm-dialog" style="display: none;">
+          <div class="confirm-header" id="generic-confirm-title">确认操作</div>
+          <div class="confirm-body">
+            <p class="warning-text" id="generic-confirm-message"></p>
+          </div>
+          <div class="confirm-footer" style="display: flex; gap: 12px; padding: 16px 24px; border-top: 1px solid rgba(0,0,0,0.05);">
+            <button id="btn-generic-cancel" class="btn-cancel" style="flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; background: white; filter: none; padding: 10px;">取消</button>
+            <button id="btn-generic-confirm" class="btn-confirm primary" style="flex: 1.5; padding: 10px; border-radius: 8px;">确认</button>
+          </div>
+        </div>
+
         <!-- Spatial Navigation Tools (Level 2 Only) -->
         <div class="spatial-nav-tools" id="spatial-filters" style="display: none;">
           <div class="spatial-filter-group">
@@ -203,6 +230,28 @@ export class SpatialView {
 
     window.addEventListener('filter-reset', () => {
       this.updateBreadcrumbs({ type: ['全部型别'], airline: ['全部航司'], msn: ['全部MSN'], registration: ['全部注册号'] });
+    });
+
+    window.addEventListener('ata-visibility-changed', (e) => {
+      const { nodeId, isChecked } = e.detail;
+      const action = isChecked ? '显示' : '隐藏';
+      const label = nodeId === 'C919' ? 'C919' : `ATA ${nodeId}`;
+      this.showBanner(`已${action} ${label} 关联三维数模实体`, 2000);
+    });
+
+    window.addEventListener('request-aircraft-selection', (e) => {
+      this.showAircraftSelectionDialog(e.detail.list, e.detail.context);
+    });
+
+    window.addEventListener('structure-visibility-changed', (e) => {
+      const { id, isChecked } = e.detail;
+      const action = isChecked ? '显示' : '隐藏';
+      const label = id === 'C919' ? 'C919' : `结构部段 ${id}`;
+      this.showBanner(`已${action} ${label} 关联数模参照系`, 2000);
+    });
+
+    window.addEventListener('request-confirm-dialog', (e) => {
+      this.showConfirmDialog(e.detail);
     });
 
     // Handle Dropdown Selection via Change Event (Source of Truth)
@@ -950,6 +999,64 @@ export class SpatialView {
     }, 2500);
   }
 
+  showAircraftSelectionDialog(list, context) {
+    const popup = this.container.querySelector('#aircraft-selection-popup');
+    const listContainer = this.container.querySelector('#aircraft-multiselect-list');
+    const confirmBtn = this.container.querySelector('#btn-aircraft-confirm');
+    const cancelBtn = this.container.querySelector('#btn-aircraft-cancel');
+    
+    if (!popup || !listContainer) return;
+
+    // Render list
+    listContainer.innerHTML = list.map(ac => `
+      <label style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: white; border-radius: 8px; border: 1px solid #e2e8f0; cursor: pointer; transition: all 0.2s;">
+        <input type="checkbox" class="ac-select-cb" value="${ac.msn}|${ac.registration}" checked style="width: 16px; height: 16px;">
+        <div style="display: flex; flex-direction: column;">
+          <span style="font-size: 13px; font-weight: 600; color: #1e293b;">${ac.registration}</span>
+          <span style="font-size: 11px; color: #94a3b8;">MSN: ${ac.msn} | ${ac.airline}</span>
+        </div>
+      </label>
+    `).join('');
+
+    popup.style.display = 'block';
+
+    const handleConfirm = () => {
+      const selected = Array.from(listContainer.querySelectorAll('.ac-select-cb:checked')).map(cb => {
+        const [msn, registration] = cb.value.split('|');
+        return { msn, registration };
+      });
+      
+      if (selected.length === 0) {
+        alert('请至少选择一个关联架次');
+        return;
+      }
+
+      popup.style.display = 'none';
+      cleanup();
+      
+      // Proceed to marking mode with selected aircraft combined into context
+      window.dispatchEvent(new CustomEvent('enter-drawing-mode', { 
+        detail: { 
+          ...context,
+          associatedAircraft: selected 
+        } 
+      }));
+    };
+
+    const handleCancel = () => {
+      popup.style.display = 'none';
+      cleanup();
+    };
+
+    const cleanup = () => {
+      confirmBtn.removeEventListener('click', handleConfirm);
+      cancelBtn.removeEventListener('click', handleCancel);
+    };
+
+    confirmBtn.addEventListener('click', handleConfirm);
+    cancelBtn.addEventListener('click', handleCancel);
+  }
+
   renderTimeline(tab, records) {
     this.currentTab = tab; // Always update state
     const timeline = this.container.querySelector('#spatial-timeline');
@@ -1017,8 +1124,15 @@ export class SpatialView {
 
       marker.addEventListener('click', (e) => {
         e.stopPropagation();
+        
+        // 1. Sync sidebar
         window.dispatchEvent(new CustomEvent('damage-marker-reverse-select', {
           detail: { id: record.id }
+        }));
+
+        // 2. Trigger individual popup
+        window.dispatchEvent(new CustomEvent('damage-marker-select', {
+          detail: record
         }));
       });
 
@@ -1085,12 +1199,51 @@ export class SpatialView {
     });
   }
 
-  showBanner(text) {
+  showBanner(text, duration = null) {
     const banner = this.container.querySelector('#spatial-banner');
     if (banner) {
       banner.querySelector('.banner-text').textContent = text;
       banner.style.display = 'flex';
+      
+      if (duration) {
+        if (this._bannerTimeout) clearTimeout(this._bannerTimeout);
+        this._bannerTimeout = setTimeout(() => {
+          this.hideBanner();
+          this._bannerTimeout = null;
+        }, duration);
+      }
     }
+  }
+
+  showConfirmDialog(detail) {
+    const popup = this.container.querySelector('#generic-confirm-popup');
+    const titleEl = popup.querySelector('#generic-confirm-title');
+    const messageEl = popup.querySelector('#generic-confirm-message');
+    const btnCancel = popup.querySelector('#btn-generic-cancel');
+    const btnConfirm = popup.querySelector('#btn-generic-confirm');
+
+    titleEl.textContent = detail.title || '确认操作';
+    messageEl.textContent = detail.message || '确定要执行此操作吗？';
+    popup.style.display = 'flex';
+
+    // Cleanup previous listeners
+    const newBtnCancel = btnCancel.cloneNode(true);
+    const newBtnConfirm = btnConfirm.cloneNode(true);
+    btnCancel.parentNode.replaceChild(newBtnCancel, btnCancel);
+    btnConfirm.parentNode.replaceChild(newBtnConfirm, btnConfirm);
+
+    newBtnCancel.addEventListener('click', () => {
+      popup.style.display = 'none';
+      if (detail.onCancel) detail.onCancel();
+    });
+
+    newBtnConfirm.addEventListener('click', () => {
+      popup.style.display = 'none';
+      if (detail.confirmAction) {
+        window.dispatchEvent(new CustomEvent(detail.confirmAction, { detail: detail.confirmDetail || {} }));
+      }
+      if (detail.onConfirm) detail.onConfirm();
+    });
   }
 
   hideBanner() {
@@ -1123,11 +1276,13 @@ export class SpatialView {
       type: data.type || ['全部型别'],
       airline: data.airline || ['全部航司'],
       msn: data.msn || ['全部MSN'],
-      registration: data.registration || ['全部注册号']
+      registration: data.registration || ['全部注册号'],
+      ata: data.ata || ['全部ATA'],
+      partNo: data.partNo || ''
     };
 
     // Ensure they are arrays
-    ['type', 'airline', 'msn', 'registration'].forEach(key => {
+    ['type', 'airline', 'msn', 'registration', 'ata'].forEach(key => {
       if (!Array.isArray(filters[key])) filters[key] = [filters[key]];
     });
 
@@ -1135,38 +1290,62 @@ export class SpatialView {
       type: ['全部型别', '基本型', '高原型'],
       airline: ['全部航司', '中国东航', '中国国航', '南方航空'],
       msn: ['全部MSN', '10025', '10026'],
-      registration: ['全部注册号', 'B919M', 'B919A']
+      registration: ['全部注册号', 'B919M', 'B919A'],
+      ata: ['全部ATA', '32', '52', '53', '55', '57']
     };
 
     const formatLabel = (key, selected) => {
-      const allPrefix = key === 'type' ? '全部型别' : key === 'airline' ? '全部航司' : key === 'msn' ? '全部MSN' : '全部注册号';
+      if (key === 'partNo') return selected || '不限件号';
+      const allPrefix = key === 'type' ? '全部型别' : key === 'airline' ? '全部航司' : key === 'msn' ? '全部MSN' : key === 'ata' ? '全部ATA' : '全部注册号';
       if (selected.length === 1 && selected[0] === allPrefix) {
         return selected[0];
       }
       if (selected.length === 1) return selected[0];
-      return `${selected[0]} 等${selected.length}项`;
+      return `${selected[0]}...`;
     };
 
     const renderCrumb = (key, selected) => {
       const label = formatLabel(key, selected);
-      const keyLabel = key === 'type' ? '型别' : key === 'airline' ? '航司' : key === 'msn' ? 'MSN号' : '注册号';
+      const keyLabel = key === 'type' ? '型别' : key === 'airline' ? '航司' : key === 'msn' ? 'MSN号' : key === 'ata' ? 'ATA章节' : key === 'partNo' ? '件号' : '注册号';
+      
+      if (key === 'partNo') {
+        return `
+          <div class="crumb-container" data-key="${key}">
+            <span class="crumb ${selected ? 'active' : ''}">${label}</span>
+            ${selected ? `<button class="btn-clear" data-key="${key}" style="border:none; background:none; color:#ef4444; font-size:10px; cursor:pointer; padding:0 4px;">×</button>` : ''}
+          </div>
+        `;
+      }
+
+      // Explicitly disable ATA dropdown in breadcrumbs as it's managed by the left panels
+      if (key === 'ata') {
+        const isActive = !selected.every(s => s.startsWith('全部'));
+        return `
+          <div class="crumb-container" data-key="${key}" style="cursor: default;">
+            <span class="crumb ${isActive ? 'active' : ''}">${label}</span>
+          </div>
+        `;
+      }
+
       return `
         <div class="crumb-container" data-key="${key}">
-          <span class="crumb">${label}</span>
+          <span class="crumb ${selected.every(s => s.startsWith('全部')) ? '' : 'active'}">${label}</span>
           <div class="crumb-dropdown">
             <div class="dropdown-header">
               <span>选择${keyLabel}</span>
               <button class="btn-clear" data-key="${key}">重置</button>
             </div>
-            ${options[key].map(opt => {
-        const checked = selected.includes(opt);
-        return `
-                <div class="dropdown-item ${checked ? 'active' : ''}" data-value="${opt}">
-                  <input type="checkbox" ${checked ? 'checked' : ''} onclick="event.stopPropagation()">
-                  <span class="item-label">${opt}</span>
-                </div>
-              `;
-      }).join('')}
+            <div class="dropdown-options-list" style="max-height: 200px; overflow-y: auto;">
+              ${options[key].map(opt => {
+                const checked = selected.includes(opt);
+                return `
+                  <div class="dropdown-item ${checked ? 'active' : ''}" data-value="${opt}">
+                    <input type="checkbox" ${checked ? 'checked' : ''} onclick="event.stopPropagation()">
+                    <span class="item-label">${opt}</span>
+                  </div>
+                `;
+              }).join('')}
+            </div>
           </div>
         </div>
       `;
@@ -1180,6 +1359,10 @@ export class SpatialView {
       ${renderCrumb('msn', filters.msn)}
       <span class="separator">></span>
       ${renderCrumb('registration', filters.registration)}
+      <span class="separator">></span>
+      ${renderCrumb('ata', filters.ata)}
+      <span class="separator">></span>
+      ${renderCrumb('partNo', filters.partNo)}
     `;
 
     // Re-bind breadcrumb events (since we just rewrote the HTML)
@@ -1193,8 +1376,13 @@ export class SpatialView {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const key = btn.dataset.key;
-        const allValue = key === 'type' ? '全部型别' : key === 'airline' ? '全部航司' : key === 'msn' ? '全部MSN' : '全部注册号';
-        filters[key] = [allValue];
+        const allValue = key === 'type' ? '全部型别' : key === 'airline' ? '全部航司' : key === 'msn' ? '全部MSN' : key === 'ata' ? '全部ATA' : '全部注册号';
+        
+        if (key === 'partNo') {
+          filters.partNo = '';
+        } else {
+          filters[key] = [allValue];
+        }
         
         window.dispatchEvent(new CustomEvent('filter-change', {
           detail: filters
@@ -1210,7 +1398,7 @@ export class SpatialView {
         e.stopPropagation();
         const key = item.closest('.crumb-container').dataset.key;
         const val = item.dataset.value;
-        const allValue = key === 'type' ? '全部型别' : key === 'airline' ? '全部航司' : key === 'msn' ? '全部MSN' : '全部注册号';
+        const allValue = key === 'type' ? '全部型别' : key === 'airline' ? '全部航司' : key === 'msn' ? '全部MSN' : key === 'ata' ? '全部ATA' : '全部注册号';
         
         let selected = [...filters[key]];
         if (val === allValue) {
@@ -1307,8 +1495,8 @@ export class SpatialView {
       }
 
       .breadcrumb-nav .crumb {
-        color: var(--primary-blue);
-        font-weight: 500;
+        color: #94a3b8;
+        font-weight: 400;
         cursor: pointer;
         transition: 0.2s;
         padding: 4px 8px; /* Increased padding for larger hit area */
@@ -1316,9 +1504,15 @@ export class SpatialView {
         display: inline-block;
       }
 
+      .breadcrumb-nav .crumb.active {
+        color: var(--primary-blue);
+        font-weight: 600;
+      }
+
       .breadcrumb-nav .crumb:hover,
       .crumb-container.open .crumb {
         background: rgba(0, 82, 217, 0.08); /* Stronger feedback */
+        color: var(--primary-blue);
       }
 
       .crumb-container {

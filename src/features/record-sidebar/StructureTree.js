@@ -129,11 +129,22 @@ export class StructureTree {
     ];
     this.selectedId = null;
     this.searchQuery = '';
+    this.uncheckedNodes = new Set();
+    this.collapsedGroups = new Set();
+    
+    // Initial collapse state
+    this.data.forEach(node => {
+      if (!node.expanded) this.collapsedGroups.add(node.id);
+    });
+    
     this.render();
   }
 
   render() {
     const filteredData = this.getFilteredData(this.data);
+
+    const isRootChecked = !this.uncheckedNodes.has('C919');
+    const isRootCollapsed = this.collapsedGroups.has('C919');
 
     this.container.innerHTML = `
       <div class="structure-tree-container">
@@ -146,7 +157,16 @@ export class StructureTree {
           </div>
         </div>
         <div class="tree-content">
-          ${filteredData.length > 0 ? this.renderNodes(filteredData) : '<div class="no-results">无匹配部段</div>'}
+          <div class="tree-node root-node has-children ${isRootCollapsed ? 'collapsed' : 'expanded'}" data-id="C919">
+            <div class="node-content root-header" style="background: rgba(0,82,217,0.03); border-left: 3px solid #0052d9; margin-bottom: 4px;">
+              <input type="checkbox" class="struct-visibility-cb" data-node-id="C919" ${isRootChecked ? 'checked' : ''} style="margin: 0 6px 0 0; cursor: pointer;">
+              <span class="tree-chevron">${isRootCollapsed ? '▶' : '▼'}</span>
+              <span class="node-label" style="font-weight: 700; color: #0052d9;">C919</span>
+            </div>
+            <div class="node-children" style="display: ${isRootCollapsed ? 'none' : 'block'}; padding-left: 12px;">
+              ${filteredData.length > 0 ? this.renderNodes(filteredData) : '<div class="no-results">无匹配部段</div>'}
+            </div>
+          </div>
         </div>
       </div>
     `;
@@ -176,19 +196,24 @@ export class StructureTree {
   }
 
   renderNodes(nodes) {
-    return nodes.map(node => `
-      <div class="tree-node ${node.children ? 'has-children' : ''} ${node.expanded ? 'expanded' : ''}" data-id="${node.id}">
-        <div class="node-content ${this.selectedId === node.id ? 'selected' : ''}">
-          ${node.children ? `<span class="tree-chevron">${node.expanded ? '▼' : '▶'}</span>` : '<span class="tree-bullet">•</span>'}
-          <span class="node-label">${node.label}</span>
-        </div>
-        ${node.children ? `
-          <div class="node-children">
-            ${this.renderNodes(node.children)}
+    return nodes.map(node => {
+      const isExpanded = !this.collapsedGroups.has(node.id);
+      const isChecked = !this.uncheckedNodes.has(node.id);
+      return `
+        <div class="tree-node ${node.children ? 'has-children' : ''} ${isExpanded ? 'expanded' : 'collapsed'}" data-id="${node.id}">
+          <div class="node-content ${this.selectedId === node.id ? 'selected' : ''}">
+            <input type="checkbox" class="struct-visibility-cb" data-node-id="${node.id}" ${isChecked ? 'checked' : ''} style="margin: 0 6px 0 0; cursor: pointer;">
+            ${node.children ? `<span class="tree-chevron">${isExpanded ? '▼' : '▶'}</span>` : '<span class="tree-bullet">•</span>'}
+            <span class="node-label">${node.label}</span>
           </div>
-        ` : ''}
-      </div>
-    `).join('');
+          ${node.children ? `
+            <div class="node-children">
+              ${this.renderNodes(node.children)}
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
   }
 
   initEvents() {
@@ -212,31 +237,67 @@ export class StructureTree {
       });
     }
 
+    // Visibility Checkboxes
+    const checkboxes = this.container.querySelectorAll('.struct-visibility-cb');
+    checkboxes.forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        const id = cb.dataset.nodeId;
+        const isChecked = cb.checked;
+        
+        const updateRecursive = (nodeId, checked) => {
+          if (checked) this.uncheckedNodes.delete(nodeId);
+          else this.uncheckedNodes.add(nodeId);
+          
+          const node = (nodeId === 'C919') ? { children: this.data } : this.findNode(this.data, nodeId);
+          if (node && node.children) {
+            node.children.forEach(c => updateRecursive(c.id, checked));
+          }
+        };
+
+        updateRecursive(id, isChecked);
+        
+        window.dispatchEvent(new CustomEvent('structure-visibility-changed', {
+          detail: { id, isChecked, uncheckedCount: this.uncheckedNodes.size }
+        }));
+        
+        this.render();
+      });
+      cb.addEventListener('click', e => e.stopPropagation());
+    });
+
     const nodes = this.container.querySelectorAll('.tree-node');
     nodes.forEach(node => {
       const content = node.querySelector('.node-content');
       content.addEventListener('click', (e) => {
         e.stopPropagation();
         const id = node.dataset.id;
-
-        // Handle expansion
-        if (node.classList.contains('has-children')) {
+        
+        // Handle expansion only if clicking chevron specifically
+        if (e.target.classList.contains('tree-chevron')) {
           this.toggleNode(id);
-        } else {
-          this.selectedId = id;
-          this.render();
-          window.dispatchEvent(new CustomEvent('part-select', { detail: { id } }));
+        } else if (!e.target.classList.contains('struct-visibility-cb')) {
+          // Select for non-branch nodes or if not clicking expansion
+          if (!node.classList.contains('has-children')) {
+             this.selectedId = id;
+             this.render();
+             window.dispatchEvent(new CustomEvent('part-select', { detail: { id } }));
+          } else {
+             // Optional: allow selecting groups too if needed
+             this.selectedId = id;
+             this.render();
+          }
         }
       });
     });
   }
 
   toggleNode(id) {
-    const nodeData = this.findNode(this.data, id);
-    if (nodeData) {
-      nodeData.expanded = !nodeData.expanded;
-      this.render();
+    if (this.collapsedGroups.has(id)) {
+      this.collapsedGroups.delete(id);
+    } else {
+      this.collapsedGroups.add(id);
     }
+    this.render();
   }
 
   findNode(nodes, id) {
@@ -366,6 +427,25 @@ export class StructureTree {
         color: #0052d9;
         font-weight: 600;
         border-right: 2px solid #0052d9;
+      }
+
+      /* Root Node override */
+      .root-node > .node-content {
+        padding: 10px 16px;
+        background: rgba(248, 250, 252, 0.8) !important;
+        border-bottom: 1px solid rgba(0,0,0,0.04);
+      }
+
+      .root-node .node-label {
+        font-size: 14px;
+        letter-spacing: 0.2px;
+      }
+
+      .struct-visibility-cb {
+        accent-color: #0052d9;
+        width: 14px;
+        height: 14px;
+        cursor: pointer;
       }
 
       .tree-chevron {
