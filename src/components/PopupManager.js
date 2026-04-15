@@ -137,28 +137,30 @@ export class PopupManager {
 
         <div class="records-section">
           <div class="section-label">已有损伤记录</div>
-          <table class="popup-table">
-            <thead>
-              <tr>
-                <th>序号</th>
-                <th>报告编号</th>
-                <th>损伤类型</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${this.records.map((rec, index) => {
-      const hasMulti = rec.typeLabels && rec.typeLabels.length > 1;
-      const typeDesc = hasMulti ? `混合损伤: ${rec.typeLabels.join(', ')}` : (rec.typeLabels ? rec.typeLabels[0] : (rec.typeLabel || '未知'));
+          <div class="table-scroll-container">
+            <table class="popup-table">
+              <thead>
+                <tr>
+                  <th>序号</th>
+                  <th>报告编号</th>
+                  <th>损伤类型</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${this.records.map((rec, index) => {
+        const hasMulti = rec.typeLabels && rec.typeLabels.length > 1;
+        const typeDesc = hasMulti ? `混合损伤: ${rec.typeLabels.join(', ')}` : (rec.typeLabels ? rec.typeLabels[0] : (rec.typeLabel || '未知'));
 
-      return `
-                  <tr class="selectable-row ${rec.id === mainRecord.id ? 'current' : ''}" data-id="${rec.id}">
-                    <td>${index + 1}</td>
-                    <td class="id-cell">${rec.id}</td>
-                    <td title="${typeDesc}">${typeDesc}</td>
-                  </tr>`;
-    }).join('')}
-            </tbody>
-          </table>
+        return `
+                    <tr class="selectable-row ${rec.id === mainRecord.id ? 'current' : ''}" data-id="${rec.id}">
+                      <td>${index + 1}</td>
+                      <td class="id-cell">${rec.id}</td>
+                      <td title="${typeDesc}">${typeDesc}</td>
+                    </tr>`;
+      }).join('')}
+              </tbody>
+            </table>
+          </div>
           <div class="pagination">
             <span class="page-prev">＜</span>
             <span class="page-info">1 / 1</span>
@@ -280,19 +282,43 @@ export class PopupManager {
         margin-bottom: 6px;
       }
 
+      .table-scroll-container {
+        max-height: 180px;
+        overflow-y: auto;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        background: white;
+      }
+
+      /* Custom Scrollbar for High-Tech Feel */
+      .table-scroll-container::-webkit-scrollbar {
+        width: 4px;
+      }
+      .table-scroll-container::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .table-scroll-container::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 2px;
+      }
+
       .popup-table {
         width: 100%;
         border-collapse: collapse;
         font-size: 10px;
-        border: 1px solid #e2e8f0;
+        border: none;
       }
 
       .popup-table th {
+        position: sticky;
+        top: 0;
         background: #f8fafc;
         text-align: left;
         padding: 6px;
         color: #64748b;
         border-bottom: 1px solid #e2e8f0;
+        z-index: 10;
+        box-shadow: 0 1px 0 #e2e8f0;
       }
 
       .popup-table td {

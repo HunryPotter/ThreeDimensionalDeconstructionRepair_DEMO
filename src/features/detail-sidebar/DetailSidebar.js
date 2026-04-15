@@ -1,8 +1,8 @@
 export class DetailSidebar {
   constructor(container) {
     this.container = container;
-    this.srData = null;
-    this.crsData = null;
+    this.markerData = null;
+    this.selectedSrId = null;
     this.activeInnerTab = 'SR';
     this.addStyles(); // Inject styles once during initialization
     this.render();
@@ -12,6 +12,13 @@ export class DetailSidebar {
   initEvents() {
     window.addEventListener('damage-marker-select', (e) => {
       this.markerData = e.detail;
+      // Default to the first SR in the list when marker changes
+      if (this.markerData && this.markerData.srRecords && this.markerData.srRecords.length > 0) {
+        this.selectedSrId = this.markerData.srRecords[0].id;
+        this.activeInnerTab = 'SR';
+      } else {
+        this.selectedSrId = null;
+      }
       this.render();
     });
   }
@@ -40,52 +47,61 @@ export class DetailSidebar {
 
   renderMarkerView() {
     const data = this.markerData || {
+      id: 'N/A',
       title: '未选中记录',
       typeLabels: ['未知'],
       aircraftType: '--',
       airline: '--',
-      srRecord: null,
-      crsRecords: [],
+      srRecords: [],
       crRecords: []
     };
 
-    const hasSr = !!data.srRecord;
-    const hasCrs = data.crsRecords && data.crsRecords.length > 0;
-    const hasCr = data.crRecords && data.crRecords.length > 0;
+    // Find currently selected SR
+    const selectedSr = data.srRecords.find(sr => sr.id === this.selectedSrId) || (data.srRecords.length > 0 ? data.srRecords[0] : null);
+    
+    // Tab availability rules:
+    // 1. SR tab: Always available if SRs exist
+    // 2. CRS tab: Only if selected SR has at least 1 CRS
+    // 3. CR tab: Only if selected SR has at least 1 CRS (as per business feedback)
+    const hasSr = !!selectedSr;
+    const hasCrs = hasSr && selectedSr.crsRecords && selectedSr.crsRecords.length > 0;
+    const hasCr = hasCrs && data.crRecords && data.crRecords.length > 0; // Shared CR data but gated by CRS presence
 
-    // Validate active tab
-    if (this.activeInnerTab === 'SR' && !hasSr) {
-      this.activeInnerTab = hasCrs ? 'CRS' : (hasCr ? 'CR' : 'SR');
-    }
-    if (this.activeInnerTab === 'CRS' && !hasCrs) {
-      this.activeInnerTab = hasSr ? 'SR' : (hasCr ? 'CR' : 'CRS');
-    }
-    if (this.activeInnerTab === 'CR' && !hasCr) {
-      this.activeInnerTab = hasSr ? 'SR' : (hasCrs ? 'CRS' : 'CR');
-    }
+    // Validate active tab and force back to SR if current tab becomes invalid
+    if (this.activeInnerTab === 'CRS' && !hasCrs) this.activeInnerTab = 'SR';
+    if (this.activeInnerTab === 'CR' && !hasCr) this.activeInnerTab = 'SR';
 
     const damageTypeBadge = data.typeLabels ? data.typeLabels.join(' & ') : '未知损伤';
 
     // Tabs HTML
     const tabsHtml = `
       <div class="inner-tabs">
-        <div class="inner-tab ${this.activeInnerTab === 'SR' ? 'active' : ''} ${!hasSr ? 'disabled' : ''}" data-tab="SR">SR请求</div>
-        <div class="inner-tab ${this.activeInnerTab === 'CRS' ? 'active' : ''} ${!hasCrs ? 'disabled' : ''}" data-tab="CRS">CRS方案</div>
-        <div class="inner-tab ${this.activeInnerTab === 'CR' ? 'active' : ''} ${!hasCr ? 'disabled' : ''}" data-tab="CR">CR评估</div>
+        <div class="inner-tab ${this.activeInnerTab === 'SR' ? 'active' : ''} ${!hasSr ? 'disabled' : ''}" data-tab="SR">SR</div>
+        <div class="inner-tab ${this.activeInnerTab === 'CRS' ? 'active' : ''} ${!hasCrs ? 'disabled' : ''}" data-tab="CRS">CRS</div>
+        <div class="inner-tab ${this.activeInnerTab === 'CR' ? 'active' : ''} ${!hasCr ? 'disabled' : ''}" data-tab="CR">CR</div>
       </div>
     `;
 
     let contentHtml = '';
 
     if (this.activeInnerTab === 'SR' && hasSr) {
-      const sr = data.srRecord;
+      const srSelector = data.srRecords.length > 1 ? `
+        <div class="sr-selector-box">
+          <label>查看关联单据</label>
+          <select id="sr-select-dropdown" class="tech-select">
+            ${data.srRecords.map(sr => `<option value="${sr.id}" ${sr.id === this.selectedSrId ? 'selected' : ''}>${sr.id} (${sr.manualStatus === 'published' ? '已发布' : '处理中'})</option>`).join('')}
+          </select>
+        </div>
+      ` : '';
+
       contentHtml = `
         <div class="tab-pane active" id="pane-sr">
+          ${srSelector}
           <section class="info-section">
             <h4 class="section-title">SR 基础信息</h4>
             <div class="info-grid">
-              <div class="info-row"><span class="label">SR 编号:</span><span class="value highlight">${sr.id}</span></div>
-              <div class="info-row"><span class="label">发布状态:</span><span class="value">${sr.manualStatus === 'published' ? '已发布' : (sr.manualStatus === 'unpublished' ? '未发布' : '无')}</span></div>
+              <div class="info-row"><span class="label">SR 编号:</span><span class="value highlight">${selectedSr.id}</span></div>
+              <div class="info-row"><span class="label">发布状态:</span><span class="value">${selectedSr.manualStatus === 'published' ? '已发布' : (selectedSr.manualStatus === 'unpublished' ? '未发布' : '无')}</span></div>
               <div class="info-row"><span class="label">机型:</span><span class="value">C919 (${data.aircraftType})</span></div>
               <div class="info-row"><span class="label">优先级:</span><span class="value status-red">Critical</span></div>
               <div class="info-row"><span class="label">客户:</span><span class="value">${data.airline}</span></div>
@@ -96,34 +112,20 @@ export class DetailSidebar {
             <h4 class="section-title">问题信息</h4>
             <div class="problem-box">
               <div class="box-label">问题标题</div>
-              <div class="box-title">${sr.title}</div>
+              <div class="box-title">${selectedSr.title}</div>
               <div class="box-label" style="margin-top: 12px;">问题详情</div>
               <div class="box-text">
-                根据现场维护报告，在 ${data.ataLabel} 捕获到损伤。日期: ${sr.date}。<br><br>
+                根据现场维护报告，在 ${data.ataLabel} 捕获到损伤。日期: ${selectedSr.date}。<br><br>
                 请工程部门根据三维模型定位确认该损伤编号下的具体损伤参数，并评估其对气动外形及结构完整性的影响。
               </div>
             </div>
-          </section>
-
-          <section class="info-section" style="margin-top: 24px;">
-            <h4 class="section-title">时间信息</h4>
-            <div class="problem-box sm">
-              <div class="box-text muted italic">暂无时间跟踪数据</div>
-            </div>
-          </section>
-
-          <section class="info-section" style="margin-top: 24px;">
-             <h4 class="section-title">飞机信息</h4>
-             <div class="problem-box sm">
-               <div class="box-text muted italic">暂无详细飞机规格数据</div>
-             </div>
           </section>
         </div>
       `;
     } else if (this.activeInnerTab === 'CRS' && hasCrs) {
       contentHtml = `
         <div class="tab-pane active" id="pane-crs">
-          ${data.crsRecords.map(crs => `
+          ${selectedSr.crsRecords.map(crs => `
             <!-- CRS Basic Info -->
             <section class="info-section" style="margin-bottom: 24px;">
               <h4 class="section-title">CRS基本信息</h4>
@@ -135,38 +137,17 @@ export class DetailSidebar {
                   <span class="label">CRS名称:</span>
                   <span class="value semi-bold multiline">${crs.title}</span>
                 </div>
-                <div class="info-block divider">
-                  <span class="label">说明:</span>
-                  <span class="value muted sm">${crs.description || '无'}</span>
-                </div>
-                <div class="info-row"><span class="label">SR编号:</span><span class="value highlight muted sm">${data.srRecord ? data.srRecord.id : '--'}</span></div>
+                <div class="info-row"><span class="label">关联SR:</span><span class="value highlight sm">${selectedSr.id}</span></div>
                 <div class="info-row"><span class="label">ATA:</span><span class="value">${data.ataCode || '--'}</span></div>
-                <div class="info-row"><span class="label">MSN号:</span><span class="value">${crs.sortieNo || '--'}</span></div>
-                <div class="info-block">
-                  <span class="label">适航性能评估:</span>
-                  <span class="value highlight sm">${crs.assessmentReport || '--'}</span>
-                </div>
               </div>
             </section>
             
             <!-- Damage Component Info -->
-            <section class="info-section" style="margin-bottom: 24px;">
-              <h4 class="section-title">损伤构件</h4>
+            <section class="info-section">
+              <h4 class="section-title">损伤详情</h4>
               <div class="info-grid">
-                <div class="info-row"><span class="label">构建类型:</span><span class="value">${crs.compType || '--'}</span></div>
-                <div class="info-row"><span class="label">SRM/CMM号:</span><span class="value">${crs.srmId || '--'}</span></div>
-                <div class="info-flex">
-                  <div class="info-row"><span class="label auto">主要结构:</span><span class="value">${crs.isMainStruct || '否'}</span></div>
-                  <div class="info-row"><span class="label auto">关键结构:</span><span class="value">${crs.isKeyStruct || '否'}</span></div>
-                </div>
-                <div class="info-row"><span class="label">损伤构件材料:</span><span class="value">${crs.compMaterial || '--'}</span></div>
-                <div class="info-row"><span class="label">损伤类型:</span><span class="value status-red bold">${crs.damageType || (data.typeLabels ? data.typeLabels.join(',') : '--')}</span></div>
-                
-                <div class="info-block" style="margin-top: 4px;">
-                  <span class="label">损伤简述:</span>
-                  <div class="problem-box sm">${crs.damageDesc || '暂无描述'}</div>
-                </div>
-
+                <div class="info-row"><span class="label">SRM号:</span><span class="value">${crs.srmId || '--'}</span></div>
+                <div class="info-row"><span class="label">损伤分类:</span><span class="value status-red bold">${crs.damageType || damageTypeBadge}</span></div>
                 <div class="info-block" style="margin-top: 8px;">
                   <span class="label">关联零组件:</span>
                   <div class="part-list">
@@ -180,56 +161,31 @@ export class DetailSidebar {
                 </div>
               </div>
             </section>
-
-            <!-- CRS Source File -->
-            <section class="info-section">
-              <h4 class="section-title">CRS源文件</h4>
-              <div class="file-card">
-                <span class="file-icon">📄</span>
-                <div class="file-info">
-                  <span class="file-name">${crs.sourceFile || 'CRS_Report.pdf'}</span>
-                  <span class="file-meta">1.2MB | PDF Document</span>
-                </div>
-              </div>
-            </section>
-            ${data.crsRecords.length > 1 ? '<div style="height: 1px; background: #e2e8f0; margin: 24px 0;"></div>' : ''}
           `).join('')}
         </div>
       `;
     } else if (this.activeInnerTab === 'CR' && hasCr) {
       contentHtml = `
         <div class="tab-pane active" id="pane-cr">
+          <div style="background: rgba(22, 163, 74, 0.05); padding: 12px; border-radius: 8px; margin-bottom: 20px; border: 1px solid rgba(22, 163, 74, 0.1);">
+            <div style="font-size: 11px; color: #16a34a; font-weight: 600;">[共享资源] 该零部件关联的纠正性评估结论</div>
+          </div>
           ${data.crRecords.map(cr => `
             <section class="info-section" style="margin-bottom: 24px;">
-              <h4 class="section-title">基础信息</h4>
               <div class="info-grid">
                  <div class="info-row"><span class="label">CR 编号:</span><span class="value highlight">${cr.id}</span></div>
                  <div class="info-row"><span class="label">状态:</span><span class="value status-green" style="font-weight: 600;">${cr.status || '处理中'}</span></div>
                  <div class="info-row"><span class="label">评估结论:</span><span class="value semi-bold">${cr.title}</span></div>
               </div>
-            </section>
-
-            <section class="info-section" style="margin-bottom: 24px;">
-              <h4 class="section-title">客户影响描述</h4>
-              <div class="problem-box sm">
+              <div class="problem-box sm" style="margin-top: 10px;">
                 ${cr.customerImpact || '暂无描述信息'}
               </div>
             </section>
-
-            <section class="info-section">
-              <h4 class="section-title">受影响的手册或服务文件</h4>
-              <div class="info-block" style="background: rgba(0, 82, 217, 0.04); padding: 12px; border-radius: 8px; border: 1px solid rgba(0, 82, 217, 0.1);">
-                <span class="value semi-bold" style="color: var(--primary-blue); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px;">
-                  ${cr.affectedDocs || '无受影响文件'}
-                </span>
-              </div>
-            </section>
-            ${data.crRecords.length > 1 ? '<div style="height: 1px; background: #e2e8f0; margin: 24px 0;"></div>' : ''}
           `).join('')}
         </div>
       `;
     } else {
-      contentHtml = '<div class="problem-box sm"><div class="box-text muted italic">暂无关联的表单数据</div></div>';
+      contentHtml = '<div class="problem-box sm"><div class="box-text muted italic">暂无关联的单据信息 (或当前流程未进入评估阶段)</div></div>';
     }
 
     this.container.innerHTML = `
@@ -237,19 +193,18 @@ export class DetailSidebar {
         <div class="sidebar-header">
           <div class="header-left">
             <button class="btn-close-right">×</button>
-            <strong class="header-title">单据详细视图</strong>
+            <strong class="header-title">${data.id && data.id !== 'N/A' ? data.id : '单据详细视图'}</strong>
           </div>
           <span class="case-tag clickable" onclick="window.dispatchEvent(new CustomEvent('initiate-technical-request'))" title="在流程系统中查看完整关联信息">CASE系统</span>
         </div>
         
         <div class="details-content" style="padding: 16px;">
-          <!-- Marker Headline -->
-          <div style="display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-              <h3 style="margin: 0; font-size: 16px; color: var(--text-color-main);">${data.id || 'N/A'}</h3>
-              <span style="background: #fee2e2; color: #ef4444; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">${damageTypeBadge}</span>
+          <!-- Damage Summary Info (Content Layer) -->
+          <div class="damage-summary" style="margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px dashed rgba(0,0,0,0.08);">
+            <div style="font-size: 11px; color: var(--text-color-secondary); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
+              <span style="background: rgba(239, 68, 68, 0.1); color: #ef4444; padding: 2px 6px; border-radius: 4px; font-weight: 600;">损伤类型：${damageTypeBadge}</span>
             </div>
-            <div style="font-size: 13px; color: var(--text-color-secondary); font-weight: 500;">${data.title}</div>
+            <div style="font-size: 13px; color: var(--text-color-main); font-weight: 600; line-height: 1.4;">${data.title || '无标题记录'}</div>
           </div>
           
           ${tabsHtml}
@@ -274,6 +229,14 @@ export class DetailSidebar {
         this.renderMarkerView();
       });
     });
+
+    const srDropdown = this.container.querySelector('#sr-select-dropdown');
+    if (srDropdown) {
+      srDropdown.addEventListener('change', (e) => {
+        this.selectedSrId = e.target.value;
+        this.renderMarkerView();
+      });
+    }
 
     const closeBtn = this.container.querySelector('.btn-close-right');
     if (closeBtn) {
@@ -716,6 +679,45 @@ export class DetailSidebar {
       .file-meta {
         font-size: 11px;
         color: var(--text-color-muted);
+      }
+
+      /* SR Selector Styles */
+      .sr-selector-box {
+        background: rgba(0, 82, 217, 0.05);
+        border: 1px solid rgba(0, 82, 217, 0.1);
+        border-radius: 8px;
+        padding: 10px;
+        margin-bottom: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .sr-selector-box label {
+        font-size: 11px;
+        color: var(--text-color-secondary);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .tech-select {
+        width: 100%;
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-size: 12px;
+        color: var(--text-color-main);
+        font-weight: 500;
+        outline: none;
+        cursor: pointer;
+        transition: border-color 0.2s;
+      }
+
+      .tech-select:focus {
+        border-color: var(--primary-blue);
+        box-shadow: 0 0 0 2px rgba(0, 82, 217, 0.1);
       }
     `;
     document.head.appendChild(style);

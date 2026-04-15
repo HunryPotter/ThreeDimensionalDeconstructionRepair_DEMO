@@ -57,7 +57,14 @@ export class DrillDownView {
           <div class="filter-row">
             <span class="label">件号模糊</span>
             <div class="search-box" style="margin: 0; width: 150px; box-sizing: border-box; padding: 4px 8px;">
-              <input type="text" placeholder="输入模糊搜索..." id="drill-part-search" value="${sidebar.activeFilters.partNo}">
+              <input type="text" placeholder="输入件号搜索..." id="drill-part-search" value="${sidebar.activeFilters.partNo}">
+            </div>
+          </div>
+
+          <div class="filter-row">
+            <span class="label">损伤标记模糊</span>
+            <div class="search-box" style="margin: 0; width: 150px; box-sizing: border-box; padding: 4px 8px;">
+              <input type="text" placeholder="输入编号/标题..." id="drill-marker-search" value="${sidebar.activeFilters.markerQuery}">
             </div>
           </div>
           
@@ -125,6 +132,7 @@ export class DrillDownView {
         sidebar.searchQuery = '';
         sidebar.activeFilters.ata = ['全部ATA'];
         sidebar.activeFilters.partNo = '';
+        sidebar.activeFilters.markerQuery = '';
         sidebar.render();
         window.dispatchEvent(new CustomEvent('filter-change', { detail: sidebar.activeFilters }));
       });
@@ -184,8 +192,16 @@ export class DrillDownView {
       partSearch.addEventListener('input', (e) => {
         sidebar.activeFilters.partNo = e.target.value;
         window.dispatchEvent(new CustomEvent('filter-change', { detail: sidebar.activeFilters }));
-        // Note: In Level 2, we might not need to full re-render immediately for every keystroke if performance is an issue, 
-        // but for prototype consistency we do.
+        sidebar.render();
+      });
+    }
+
+    // Search input for Marker ID/Title
+    const markerSearch = sidebar.container.querySelector('#drill-marker-search');
+    if (markerSearch) {
+      markerSearch.addEventListener('input', (e) => {
+        sidebar.activeFilters.markerQuery = e.target.value;
+        window.dispatchEvent(new CustomEvent('filter-change', { detail: sidebar.activeFilters }));
         sidebar.render();
       });
     }

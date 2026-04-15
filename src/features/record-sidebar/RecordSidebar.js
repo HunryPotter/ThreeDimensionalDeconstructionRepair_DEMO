@@ -34,7 +34,8 @@ export class RecordSidebar {
       msn: ['全部MSN'],
       registration: ['全部注册号'],
       ata: ['全部ATA'],
-      partNo: ''
+      partNo: '',
+      markerQuery: ''
     };
 
     this.activeTab = 'ata-view'; 
@@ -97,21 +98,33 @@ export class RecordSidebar {
 
     const currentData = this.markerData.filter(item => {
       const matchesSearch = item.id.toLowerCase().includes(this.searchQuery.toLowerCase()) || (item.title && item.title.toLowerCase().includes(this.searchQuery.toLowerCase()));
-      const { type: aircraftTypeFilter, airline, ata, partNo } = this.activeFilters;
+      const { type: aircraftTypeFilter, airline, ata, partNo, markerQuery } = this.activeFilters;
+      
       const matchesBreadcrumbType = !aircraftTypeFilter || aircraftTypeFilter.includes('全部型别') || aircraftTypeFilter.includes(item.aircraftType);
       const matchesBreadcrumbAirline = !airline || airline.includes('全部航司') || airline.includes(item.airline);
       const matchesBreadcrumbAta = !ata || ata.includes('全部ATA') || ata.includes(item.ataCode);
-      const matchesBreadcrumbPartNo = !partNo || item.id.toLowerCase().includes(partNo.toLowerCase()) || item.title.toLowerCase().includes(partNo.toLowerCase());
+      
+      // Part Number Search: Check in all associated CRS records
+      const matchesBreadcrumbPartNo = !partNo || (item.srRecords || []).some(sr => 
+        (sr.crsRecords || []).some(crs => 
+          (crs.partNos || []).some(p => p.toLowerCase().includes(partNo.toLowerCase()))
+        )
+      );
+
+      // Marker ID/Title Search
+      const matchesBreadcrumbMarker = !markerQuery || 
+        item.id.toLowerCase().includes(markerQuery.toLowerCase()) || 
+        (item.title && item.title.toLowerCase().includes(markerQuery.toLowerCase()));
 
       const matchesType = this.selectedTypeLabels.length === 0 || item.typeLabels.some(l => this.selectedTypeLabels.includes(l));
-      const manualStatus = item.srRecord ? item.srRecord.manualStatus : 'none';
+      const manualStatus = item.srRecords && item.srRecords[0] ? item.srRecords[0].manualStatus : 'none';
       const matchesManual = this.selectedManualStatuses.includes(manualStatus);
       const itemTs = new Date(item.date).getTime();
       const matchesDate = itemTs >= startTs && itemTs <= endTs;
 
       const isEditing = this.editingId === item.id;
 
-      return !isEditing && matchesSearch && matchesBreadcrumbType && matchesBreadcrumbAirline && matchesBreadcrumbAta && matchesBreadcrumbPartNo && (item.isUserMarkup || (matchesType && matchesManual && matchesDate)) && (!this.filter3D || item.has3D);
+      return !isEditing && matchesSearch && matchesBreadcrumbType && matchesBreadcrumbAirline && matchesBreadcrumbAta && matchesBreadcrumbPartNo && matchesBreadcrumbMarker && (item.isUserMarkup || (matchesType && matchesManual && matchesDate)) && (!this.filter3D || item.has3D);
     });
 
     window.dispatchEvent(new CustomEvent('records-updated', {
@@ -349,21 +362,30 @@ export class RecordSidebar {
 
     const filteredItems = this.markerData.filter(item => {
       if (!item.has3D) return false;
-      const { type: aircraftTypeFilter, airline, ata, partNo } = this.activeFilters;
+      const { type: aircraftTypeFilter, airline, ata, partNo, markerQuery } = this.activeFilters;
       const matchesBreadcrumbType = !aircraftTypeFilter || aircraftTypeFilter.includes('全部型别') || aircraftTypeFilter.includes(item.aircraftType);
       const matchesBreadcrumbAirline = !airline || airline.includes('全部航司') || airline.includes(item.airline);
       const matchesBreadcrumbAta = !ata || ata.includes('全部ATA') || ata.includes(item.ataCode);
-      const matchesBreadcrumbPartNo = !partNo || item.id.toLowerCase().includes(partNo.toLowerCase()) || item.title.toLowerCase().includes(partNo.toLowerCase());
+      
+      const matchesBreadcrumbPartNo = !partNo || (item.srRecords || []).some(sr => 
+        (sr.crsRecords || []).some(crs => 
+          (crs.partNos || []).some(p => p.toLowerCase().includes(partNo.toLowerCase()))
+        )
+      );
+
+      const matchesBreadcrumbMarker = !markerQuery || 
+        item.id.toLowerCase().includes(markerQuery.toLowerCase()) || 
+        (item.title && item.title.toLowerCase().includes(markerQuery.toLowerCase()));
 
       const matchesType = this.selectedTypeLabels.length === 0 || item.typeLabels.some(l => this.selectedTypeLabels.includes(l));
-      const manualStatus = item.srRecord ? item.srRecord.manualStatus : 'none';
+      const manualStatus = item.srRecords && item.srRecords[0] ? item.srRecords[0].manualStatus : 'none';
       const matchesManual = this.selectedManualStatuses.includes(manualStatus);
       const itemTs = new Date(item.date).getTime();
       const matchesDate = itemTs >= startTs && itemTs <= endTs;
 
       const isChecked = !this.uncheckedMarkerIds?.has(item.id);
 
-      return matchesBreadcrumbType && matchesBreadcrumbAirline && matchesBreadcrumbAta && matchesBreadcrumbPartNo && (item.isUserMarkup || (matchesType && matchesManual && matchesDate)) && isChecked;
+      return matchesBreadcrumbType && matchesBreadcrumbAirline && matchesBreadcrumbAta && matchesBreadcrumbPartNo && matchesBreadcrumbMarker && (item.isUserMarkup || (matchesType && matchesManual && matchesDate)) && isChecked;
     });
 
     const siteGroups = {};
@@ -397,19 +419,28 @@ export class RecordSidebar {
     const endTs = new Date(this.dateRange.end).getTime();
 
     const filteredItems = this.markerData.filter(item => {
-      const { type: aircraftTypeFilter, airline, ata, partNo } = this.activeFilters;
+      const { type: aircraftTypeFilter, airline, ata, partNo, markerQuery } = this.activeFilters;
       const matchesBreadcrumbType = !aircraftTypeFilter || aircraftTypeFilter.includes('全部型别') || aircraftTypeFilter.includes(item.aircraftType);
       const matchesBreadcrumbAirline = !airline || airline.includes('全部航司') || airline.includes(item.airline);
       const matchesBreadcrumbAta = !ata || ata.includes('全部ATA') || ata.includes(item.ataCode);
-      const matchesBreadcrumbPartNo = !partNo || item.id.toLowerCase().includes(partNo.toLowerCase()) || item.title.toLowerCase().includes(partNo.toLowerCase());
+      
+      const matchesBreadcrumbPartNo = !partNo || (item.srRecords || []).some(sr => 
+        (sr.crsRecords || []).some(crs => 
+          (crs.partNos || []).some(p => p.toLowerCase().includes(partNo.toLowerCase()))
+        )
+      );
+
+      const matchesBreadcrumbMarker = !markerQuery || 
+        item.id.toLowerCase().includes(markerQuery.toLowerCase()) || 
+        (item.title && item.title.toLowerCase().includes(markerQuery.toLowerCase()));
 
       const matchesType = this.selectedTypeLabels.length === 0 || item.typeLabels.some(l => this.selectedTypeLabels.includes(l));
-      const manualStatus = item.srRecord ? item.srRecord.manualStatus : 'none';
+      const manualStatus = item.srRecords && item.srRecords[0] ? item.srRecords[0].manualStatus : 'none';
       const matchesManual = this.selectedManualStatuses.includes(manualStatus);
       const itemTs = new Date(item.date).getTime();
       const matchesDate = itemTs >= startTs && itemTs <= endTs;
 
-      return matchesBreadcrumbType && matchesBreadcrumbAirline && matchesBreadcrumbAta && matchesBreadcrumbPartNo && (item.isUserMarkup || (matchesType && matchesManual && matchesDate));
+      return matchesBreadcrumbType && matchesBreadcrumbAirline && matchesBreadcrumbAta && matchesBreadcrumbPartNo && matchesBreadcrumbMarker && (item.isUserMarkup || (matchesType && matchesManual && matchesDate));
     });
 
     if (filteredItems.length === 0) {
