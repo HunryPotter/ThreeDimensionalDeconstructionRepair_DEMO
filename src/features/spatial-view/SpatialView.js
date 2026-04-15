@@ -35,15 +35,14 @@ export class SpatialView {
                 <img src="${aircraftBg}" class="background-aircraft" alt="Aircraft Background">
                 
                 <!-- SVG Overlay for Leader Lines & Measurement -->
-                <svg id="leader-line-svg" class="leader-line-layer">
-                    <path id="leader-line-path" d="" fill="none" stroke="rgba(239, 68, 68, 0.85)" stroke-width="2" stroke-dasharray="6,3" />
-                    <line id="measure-line" x1="0" y1="0" x2="0" y2="0" stroke="#a3e635" stroke-width="2" stroke-dasharray="4,2" style="display: none;" />
+                <svg class="leader-line-layer spatial-leader-line-svg" style="pointer-events: none;">
+                    <line class="measure-line" x1="0" y1="0" x2="0" y2="0" stroke="#a3e635" stroke-width="2" stroke-dasharray="4,2" style="display: none;" />
                 </svg>
                 
-                <div id="measure-label" class="measure-tooltip" style="display: none;">0.0m</div>
+                <div class="measure-tooltip spatial-measure-label" style="display: none;">0.0m</div>
 
                 <!-- Dynamic Damage Hotspots Container -->
-                <div id="damage-markers-layer" style="position: absolute; inset: 0; pointer-events: none;"></div>
+                <div class="damage-markers-layer" style="position: absolute; inset: 0; pointer-events: none;"></div>
             </div>
         </div>
 
@@ -367,7 +366,7 @@ export class SpatialView {
   }
 
   renderMarkers(markers) {
-    const layer = this.container.querySelector('#damage-markers-layer');
+    const layer = this.container.querySelector('.damage-markers-layer');
     if (!layer) return;
 
     // Fast check: if markers are identical, skip render
@@ -393,7 +392,7 @@ export class SpatialView {
           const isUserMarkup = rec.isUserMarkup;
           const subMarker = document.createElement('div');
           const isSelected = rec.id === window.app?.leftSidebar?.selectedMarkerId;
-          subMarker.className = `hotspot sub-marker ${isUserMarkup ? 'marker-user' : 'marker-existing'} ${isSelected ? 'selected' : ''}`;
+          subMarker.className = `hotspot sub-marker spatial-marker-dot ${isUserMarkup ? 'marker-user' : 'marker-existing'} ${isSelected ? 'selected' : ''}`;
           subMarker.dataset.id = rec.id;
 
           // Calculate individual expansion angle
@@ -410,8 +409,9 @@ export class SpatialView {
 
           subMarker.addEventListener('click', (e) => {
             e.stopPropagation();
-            window.dispatchEvent(new CustomEvent('damage-marker-reverse-select', {
-              detail: { id: rec.id, allIds: data.records.map(r => r.id) }
+            // Dispatch standard select to update bubble and internal state
+            window.dispatchEvent(new CustomEvent('damage-marker-select', {
+              detail: { ...rec, allIds: data.records.map(r => r.id) }
             }));
           });
           siteContainer.appendChild(subMarker);
@@ -444,12 +444,11 @@ export class SpatialView {
       mainMarker.addEventListener('click', (e) => {
         e.stopPropagation();
         window.dispatchEvent(new CustomEvent('site-click', { detail: data }));
-        // Default behavior: select the first record
-        window.dispatchEvent(new CustomEvent('damage-marker-reverse-select', {
-          detail: {
-            id: data.isExisting ? data.records[0].id : data.id,
-            allIds: data.isExisting ? data.records.map(r => r.id) : [data.id]
-          }
+        
+        // Default behavior: show bubble for the first record at site
+        const firstRec = data.isExisting ? data.records[0] : { id: data.id };
+        window.dispatchEvent(new CustomEvent('damage-marker-select', {
+          detail: { ...firstRec, allIds: data.isExisting ? data.records.map(r => r.id) : [data.id] }
         }));
       });
 
@@ -495,8 +494,8 @@ export class SpatialView {
   resetMeasurement() {
     this.measurePoints = [];
     this.container.querySelectorAll('.marker-measure').forEach(m => m.remove());
-    const mLine = this.container.querySelector('#measure-line');
-    const mLabel = this.container.querySelector('#measure-label');
+    const mLine = this.container.querySelector('.measure-line');
+    const mLabel = this.container.querySelector('.spatial-measure-label');
     if (mLine) mLine.style.display = 'none';
     if (mLabel) mLabel.style.display = 'none';
   }
@@ -529,9 +528,9 @@ export class SpatialView {
   drawMeasureLine(scene) {
     const p1 = this.measurePoints[0];
     const p2 = this.measurePoints[1];
-    const line = this.container.querySelector('#measure-line');
-    const label = this.container.querySelector('#measure-label');
-    const svgLayer = this.container.querySelector('#leader-line-svg');
+    const line = this.container.querySelector('.measure-line');
+    const label = this.container.querySelector('.spatial-measure-label');
+    const svgLayer = this.container.querySelector('.spatial-leader-line-svg');
     const svgRect = svgLayer.getBoundingClientRect();
 
     const x1 = (p1.x / 100) * svgRect.width;
@@ -944,8 +943,8 @@ export class SpatialView {
   }
 
   showRetrievalGuide(marker) {
-    const svg = this.container.querySelector('#leader-line-svg');
-    const path = this.container.querySelector('#leader-line-path');
+    const svg = this.container.querySelector('.spatial-leader-line-svg');
+    const path = this.container.querySelector('.spatial-leader-line-path');
     const scene = this.container.querySelector('#spatial-scene-container');
     if (!svg || !path || !scene) return;
 
@@ -1125,12 +1124,7 @@ export class SpatialView {
       marker.addEventListener('click', (e) => {
         e.stopPropagation();
         
-        // 1. Sync sidebar
-        window.dispatchEvent(new CustomEvent('damage-marker-reverse-select', {
-          detail: { id: record.id }
-        }));
-
-        // 2. Trigger individual popup
+        // Trigger individual popup and update internal selection state
         window.dispatchEvent(new CustomEvent('damage-marker-select', {
           detail: record
         }));
@@ -1803,19 +1797,37 @@ export class SpatialView {
         z-index: 100; /* Bring to front on hover */
       }
 
+      /* Hover Buffer: Ensures the expansion stays open while mouse moves within the diffusion radius */
+      .site-container:hover:not(.no-spread)::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 130px; /* Diameter for 65px radius */
+        height: 130px;
+        transform: translate(-50%, -50%);
+        background: transparent;
+        border-radius: 50%;
+        z-index: -1;
+        pointer-events: auto;
+      }
+
       .sub-marker {
         z-index: 5;
         opacity: 0;
         pointer-events: none;
-        transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        /* Increased to 0.8s for better stability as per user feedback */
+        transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.8s;
         transform: translate(-50%, -50%) scale(0.2);
       }
 
       .site-container:hover:not(.no-spread) .sub-marker {
         opacity: 1;
         pointer-events: auto;
-        /* Spider layout expansion using calculate angle and radius */
-        transform: translate(calc(-50% + cos(var(--angle)) * 34px), calc(-50% + sin(var(--angle)) * 34px)) scale(0.9);
+        /* Radius increased from 34px to 55px; Scale increased from 0.9 to 1.15 */
+        transform: translate(calc(-50% + cos(var(--angle)) * 55px), calc(-50% + sin(var(--angle)) * 55px)) scale(1.15);
+        /* Remove delay when expanding (mouse-enter) for immediate feedback */
+        transition-delay: 0s;
       }
 
       .main-marker {

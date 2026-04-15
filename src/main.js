@@ -96,15 +96,15 @@ class App {
         });
 
         window.addEventListener('ata-branch-select', (e) => {
-            const { ataCode } = e.detail;
+            const { ataCode, label } = e.detail;
             
-            // Strictly ATA-Twig Association: Fetch all markers sharing the same ATA code
+            // Strictly ATA-Twig Association: Fetch all markers sharing the same ATA code (inclusive of sub-branches)
             const related = this.leftSidebar.markerData.filter(m => 
-                m.ataCode === ataCode
+                m.ataCode.startsWith(ataCode)
             );
             
             if (related.length > 0) {
-                this.popupManager.show(related, related[0].id);
+                this.popupManager.show(related, related[0].id, { ataCode, label });
                 // Hide specific popup if it was showing a different marker
                 this.markerPopup.hide();
                 
@@ -139,9 +139,9 @@ class App {
                     this.markerPopup.show(marker);
                 }
             } else if (this.leftSidebar.selectedBranchId) {
-                // If it was a branch-level focus, restore the summary popup
+                // If it was a branch-level focus, restore the summary popup based on containment
                 const related = this.leftSidebar.markerData.filter(m => 
-                    m.ataCode === this.leftSidebar.selectedBranchId
+                    m.ataCode.startsWith(this.leftSidebar.selectedBranchId)
                 );
                 if (related.length > 0) {
                     this.popupManager.show(related, related[0].id);
@@ -190,6 +190,19 @@ class App {
     }
 
     toggleRightPanel(show) {
+        if (this.externalView && this.externalView.markerEntryActive) {
+            this.externalView.toggleRightPanel(show);
+            // Even if external view is active, we might want to keep the underlying structure synced to avoid glitches when returning
+            if (show === undefined) {
+                this.container.classList.toggle('right-collapsed');
+            } else if (show) {
+                this.container.classList.remove('right-collapsed');
+            } else {
+                this.container.classList.add('right-collapsed');
+            }
+            return;
+        }
+
         if (show === undefined) {
             this.container.classList.toggle('right-collapsed');
         } else if (show) {

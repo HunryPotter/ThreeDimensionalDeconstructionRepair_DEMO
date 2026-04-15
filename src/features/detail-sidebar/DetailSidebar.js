@@ -225,8 +225,9 @@ export class DetailSidebar {
         <div class="details-content" style="padding: 16px;">
           <!-- Damage Summary Info (Content Layer) -->
           <div class="damage-summary" style="margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px dashed rgba(0,0,0,0.08);">
-            <div style="font-size: 11px; color: var(--text-color-secondary); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+            <div style="font-size: 11px; color: var(--text-color-secondary); margin-bottom: 4px; display: flex; align-items: center; gap: 8px;">
               <span style="background: rgba(239, 68, 68, 0.1); color: #ef4444; padding: 2px 6px; border-radius: 4px; font-weight: 600;">损伤类型：${damageTypeBadge}</span>
+              <span style="background: rgba(0, 82, 217, 0.1); color: #0052d9; padding: 2px 6px; border-radius: 4px; font-weight: 600;">ATA 章节：${data.ataLabel || '--'}</span>
             </div>
             <div style="font-size: 13px; color: var(--text-color-main); font-weight: 600; line-height: 1.4;">${data.title || '无标题记录'}</div>
           </div>
@@ -295,14 +296,14 @@ export class DetailSidebar {
         transform: translateX(0);
       }
 
-      #app-container.right-collapsed .right-panel-region .sidebar-container > *:not(.btn-toggle-handle) {
+      .right-collapsed .right-panel-region .sidebar-container > *:not(.btn-toggle-handle) {
         opacity: 0;
         pointer-events: none;
         visibility: hidden;
         transform: translateX(20px);
       }
 
-      #app-container.right-collapsed .right-panel-region .sidebar-container {
+      .right-collapsed .right-panel-region .sidebar-container {
         background: transparent;
         border: none;
         box-shadow: none;
@@ -351,7 +352,7 @@ export class DetailSidebar {
         color: white;
       }
 
-      #app-container.right-collapsed .right-panel-region .btn-toggle-handle .handle-icon {
+      .right-collapsed .right-panel-region .btn-toggle-handle .handle-icon {
         transform: scaleY(1.2) rotate(180deg);
         color: var(--primary-blue);
       }

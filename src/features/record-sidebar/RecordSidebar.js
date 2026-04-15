@@ -14,10 +14,19 @@ import './RecordSidebar.css';
  * Centrally manages markers, filters, and high-level routing between Level 1 and Level 2 views.
  */
 export class RecordSidebar {
-  constructor(container) {
+  constructor(container, options = {}) {
     this.container = container;
-    this.view = 'selection'; // 'selection' or 'drilldown'
+    this.view = options.initialView || 'selection'; // 'selection' or 'drilldown'
+    this.context = options.context || 'app'; // 'app' or 'case'
     this.damageTypePanelVisible = false;
+
+    // View Component Injection
+    const DrillDownClass = options.drillDownViewClass || DrillDownView;
+    const SelectionClass = options.selectionViewClass || SelectionView;
+
+    this.selectionView = new SelectionClass(this);
+    this.drillDownView = new DrillDownClass(this);
+    this.ataTreeViewInstance = new AtaTreeView(this);
 
     // Global Filters
     this.filterManual = false;
@@ -127,11 +136,6 @@ export class RecordSidebar {
       { id: 'site-15', x: 71, y: 49 }
     ];
     this.markerData = MockDataService.generateMarkerData(this.spatialSites);
-
-    // Instantiate Sub-views
-    this.selectionView = new SelectionView(this);
-    this.drillDownView = new DrillDownView(this);
-    this.ataTreeViewInstance = new AtaTreeView(this);
 
     this.initGlobalEvents();
     this.render();
@@ -710,7 +714,7 @@ export class RecordSidebar {
         };
       }
       siteGroups[item.siteId].records.push({
-        id: item.id,
+        ...item, // Pass all fields (srRecords, typeLabels, coords, date, etc.)
         typeIcon: item.typeLabels.length > 1 ? '⧉' : (iconMap[item.typeLabels[0]] || '⊞'),
         isExisting: true,
         isUserMarkup: !!item.isUserMarkup

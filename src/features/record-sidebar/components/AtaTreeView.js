@@ -104,6 +104,7 @@ export class AtaTreeView {
         <div class="ata-node-container ${hasChildren ? 'has-children' : ''} ${isExpanded ? 'expanded' : 'collapsed'} ${isFilteredMatch ? 'filtered-match' : ''}" style="margin-left: ${level > 0 ? 4 : 0}px;">
           <div class="ata-header ${isSelected ? 'selected' : ''}" 
                data-node-id="${node.code}" 
+               data-node-label="${node.label}"
                style="padding-left: ${paddingLeft}px;">
             <div class="header-left">
               <input type="checkbox" class="ata-visibility-cb" data-node-id="${node.code}" ${isChecked ? 'checked' : ''} style="margin: 0 6px 0 2px; cursor: pointer;">
@@ -165,7 +166,7 @@ export class AtaTreeView {
     return `
       <div class="tree-view-wrapper">
         <div class="ata-node-container root-node ${isRootCollapsed ? 'collapsed' : 'expanded'}" style="margin-bottom: 4px;">
-          <div class="ata-header root-header" data-node-id="C919" style="background: rgba(0,0,0,0.02); border-left: 3px solid var(--primary-blue);">
+          <div class="ata-header root-header" data-node-id="C919" data-node-label="全机" style="background: rgba(0,0,0,0.02); border-left: 3px solid var(--primary-blue);">
             <div class="header-left">
               <input type="checkbox" class="ata-visibility-cb" data-node-id="C919" ${isRootChecked ? 'checked' : ''} style="margin: 0 6px 0 2px; cursor: pointer;">
               <span class="chevron">${isRootCollapsed ? '▶' : '▼'}</span>
@@ -245,7 +246,7 @@ export class AtaTreeView {
         const nodeId = header.dataset.nodeId;
 
         // Handle collapse/expand if clicking chevron specifically
-        if (e.target.classList.contains('chevron')) {
+        if (e.target.classList.contains('chevron') || e.target.closest('.chevron')) {
           if (sidebar.collapsedAtaGroups.has(nodeId)) {
             sidebar.collapsedAtaGroups.delete(nodeId);
           } else {
@@ -257,7 +258,7 @@ export class AtaTreeView {
           sidebar.selectedBranchId = nodeId;
           sidebar.selectedMarkerId = null; // Clear individual selection
           window.dispatchEvent(new CustomEvent('ata-branch-select', { 
-            detail: { ataCode: nodeId } 
+            detail: { ataCode: nodeId, label: header.dataset.nodeLabel || '未知' } 
           }));
         }
 

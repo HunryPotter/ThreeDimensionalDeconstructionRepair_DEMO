@@ -18,64 +18,64 @@ export const MockDataService = {
     // ATA 6-digit Hierarchy (Chapter-Section-Subject)
     const ataHierarchy = [
       {
-        code: '32', label: '起落架', children: [
+        code: '32', label: '32 起落架', children: [
           {
-            code: '32-11', label: '主起落架', children: [
-              { code: '32-11-01', label: '减震支柱' },
-              { code: '32-11-05', label: '起落架车架' }
+            code: '32-11', label: '32-11 主起落架', children: [
+              { code: '32-11-01', label: '32-11-01 减震支柱' },
+              { code: '32-11-05', label: '32-11-05 起落架车架' }
             ]
           },
           {
-            code: '32-21', label: '前起落架', children: [
-              { code: '32-21-01', label: '收放支柱' }
+            code: '32-21', label: '32-21 前起落架', children: [
+              { code: '32-21-01', label: '32-21-01 收放支柱' }
             ]
           }
         ]
       },
       {
-        code: '52', label: '舱门', children: [
+        code: '52', label: '52 舱门', children: [
           {
-            code: '52-11', label: '登机门', children: [
-              { code: '52-11-01', label: '门体结构' },
-              { code: '52-11-10', label: '锁逻辑机构' }
+            code: '52-11', label: '52-11 登机门', children: [
+              { code: '52-11-01', label: '52-11-01 门体结构' },
+              { code: '52-11-10', label: '52-11-10 锁逻辑机构' }
             ]
           },
           {
-            code: '52-71', label: '起落架舱门', children: [
-              { code: '52-71-01', label: '主起落架舱门' }
+            code: '52-71', label: '52-71 起落架舱门', children: [
+              { code: '52-71-01', label: '52-71-01 主起落架舱门' }
             ]
           }
         ]
       },
       {
-        code: '53', label: '机身', children: [
+        code: '53', label: '53 机身', children: [
           {
-            code: '53-11', label: '前机身', children: [
-              { code: '53-11-01', label: '下部蒙皮' },
-              { code: '53-11-05', label: '站位隔框' }
+            code: '53-11', label: '53-11 前机身', children: [
+              { code: '53-11-01', label: '53-11-01 下部蒙皮' },
+              { code: '53-11-05', label: '53-11-05 站位隔框' }
             ]
           },
           {
-            code: '53-21', label: '中机身', children: [
-              { code: '53-21-01', label: '中央翼连接件' }
+            code: '53-21', label: '53-21 中机身', children: [
+              { code: '53-21-01', label: '53-21-01 中央翼连接件' }
             ]
           }
         ]
       },
       {
-        code: '55', label: '安定面', children: [
+        code: '55', label: '55 安定面', children: [
           {
-            code: '55-11', label: '水平安定面', children: [
-              { code: '55-11-01', label: '左侧蒙皮' }
+            code: '55-11', label: '55-11 水平安定面', children: [
+              { code: '55-11-01', label: '55-11-01 左侧蒙皮' }
             ]
           }
         ]
       },
       {
-        code: '57', label: '机翼', children: [
+        code: '57', label: '57 机翼', children: [
           {
-            code: '57-11', label: '中央翼', children: [
-              { code: '57-11-01', label: '前梁' }
+            code: '57-11', label: '57-11 中央翼', children: [
+              { code: '57-11-01', label: '57-11-01 前梁' }
             ]
           }
         ]
@@ -179,7 +179,7 @@ export const MockDataService = {
               aircraftType: type,
               airline: airline,
               ataCode: ata.code,
-              ataLabel: `ATA ${ata.code} ${ata.label}`,
+              ataLabel: ata.label,
               subBranch: subBranch,
               has3D: true,
               siteId: site.id,

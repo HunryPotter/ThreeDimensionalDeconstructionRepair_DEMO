@@ -41,8 +41,9 @@ export class PopupManager {
     });
   }
 
-  show(records, selectedId) {
+  show(records, selectedId, nodeContext = null) {
     this.records = records;
+    this.nodeContext = nodeContext;
     this.selectRecord(selectedId, false);
     this.isVisible = true;
     this.render();
@@ -68,54 +69,31 @@ export class PopupManager {
   hide() {
     this.isVisible = false;
     this.container.style.display = 'none';
-    this.clearLeaderLine();
+    this.updateLeaderLine(true); // Clear line
   }
 
-  updateLeaderLine() {
-    const dot = document.getElementById('main-hotspot');
-    const svgLayer = document.getElementById('leader-line-svg');
-    const path = document.getElementById('leader-line-path');
-
-    if (!dot || !svgLayer || !path || !this.isVisible) return;
-
-    const dotRect = dot.getBoundingClientRect();
-    const svgRect = svgLayer.getBoundingClientRect();
-    const popupRect = this.container.getBoundingClientRect();
-
-    // Start point (center of the glowing dot, relative to SVG)
-    const x1 = dotRect.left - svgRect.left + dotRect.width / 2;
-    const y1 = dotRect.top - svgRect.top + dotRect.height / 2;
-
-    // End point (closest edge of the popup, relative to SVG)
-    let x2, y2;
-
-    // Simplification: Point to the center-left or center-right of the popup based on dot position
-    if (dotRect.left < popupRect.left) {
-      x2 = popupRect.left - svgRect.left;
-      y2 = popupRect.top - svgRect.top + popupRect.height / 2;
-    } else {
-      x2 = popupRect.right - svgRect.left;
-      y2 = popupRect.top - svgRect.top + popupRect.height / 2;
-    }
-
-    // Midpoint for the "polyline" (horizontal segment first)
-    // We extend horizontally from the dot or the popup.
-    // Let's go horizontal from the dot by a fixed amount or midway.
-    const midX = x1 + (x2 - x1) * 0.4; // 40% of the way horizontally
-
-    // Path: Move to Dot (x1,y1) -> Horizontal to (midX, y1) -> Line to Popup (x2, y2)
-    path.setAttribute('d', `M ${x1} ${y1} L ${midX} ${y1} L ${x2} ${y2}`);
+  updateLeaderLine(clear = false) {
+    // 引出线效果由于影响视距并且交互复杂已取消
+    return;
   }
 
   clearLeaderLine() {
-    const path = document.getElementById('leader-line-path');
-    if (path) path.setAttribute('d', '');
+    this.updateLeaderLine(true);
   }
 
   render() {
     const title = '零部件损伤标记信息';
     const mainRecord = this.data;
-    const name = mainRecord.title || '结构损伤区域';
+    
+    let name = '结构损伤区域';
+    if (this.nodeContext && this.nodeContext.ataCode) {
+      name = `ATA ${this.nodeContext.ataCode} ${this.nodeContext.label || ''}`.trim();
+    } else if (mainRecord.ataCode) {
+      name = `ATA ${mainRecord.ataCode} ${mainRecord.ataLabel || ''}`.trim();
+    } else {
+      name = mainRecord.title || name;
+    }
+    
     const coords = mainRecord.coords ? `( ${mainRecord.coords.x.toFixed(1)}, ${mainRecord.coords.y.toFixed(1)}, 0.0 )` : '( 234.5, 120.3, 45.1 )';
 
     this.container.innerHTML = `
@@ -228,13 +206,9 @@ export class PopupManager {
           this.hide();
 
           // 2. Dispatch event that main.js will use to open MarkerPopup
+          // This will also update the internal state of sidebars WITHOUT forcing them open
           window.dispatchEvent(new CustomEvent('damage-marker-select', {
             detail: selectedMarker
-          }));
-
-          // 3. Keep sidebar in sync
-          window.dispatchEvent(new CustomEvent('damage-marker-reverse-select', {
-            detail: { id }
           }));
         }
       });

@@ -16,11 +16,11 @@
     grid-template-columns: 0px 1fr var(--right-panel-width);
 }
 
-#app-container.right-collapsed.left-collapsed {
+.standard-grid-layout.right-collapsed.left-collapsed {
     grid-template-columns: 0px 1fr 0px;
 }
 
-#app-container.right-collapsed {
+.standard-grid-layout.right-collapsed {
     /* Always keep 3 column structure to prevent implicit grid chaos */
     grid-template-columns: var(--left-panel-width) 1fr 0px;
 }

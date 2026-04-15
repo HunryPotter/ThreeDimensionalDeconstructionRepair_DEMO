@@ -50,40 +50,16 @@ export class MarkerPopup {
   hide() {
     this.isVisible = false;
     this.container.style.display = 'none';
-    this.clearLeaderLine();
+    this.updateLeaderLine(true); // Clear line
   }
 
-  updateLeaderLine() {
-    const dot = document.getElementById('main-hotspot'); // In this demo we still assume the primary dot
-    const svgLayer = document.getElementById('leader-line-svg');
-    const path = document.getElementById('leader-line-path');
-
-    if (!dot || !svgLayer || !path || !this.isVisible) return;
-
-    const dotRect = dot.getBoundingClientRect();
-    const svgRect = svgLayer.getBoundingClientRect();
-    const popupRect = this.container.getBoundingClientRect();
-
-    const x1 = dotRect.left - svgRect.left + dotRect.width / 2;
-    const y1 = dotRect.top - svgRect.top + dotRect.height / 2;
-
-    let x2, y2;
-    if (dotRect.left < popupRect.left) {
-      x2 = popupRect.left - svgRect.left;
-      y2 = popupRect.top - svgRect.top + 20; // Point to header area
-    } else {
-      x2 = popupRect.right - svgRect.left;
-      y2 = popupRect.top - svgRect.top + 20;
-    }
-
-    const midX = x1 + (x2 - x1) * 0.3;
-    path.setAttribute('d', `M ${x1} ${y1} L ${midX} ${y1} L ${x2} ${y2}`);
-    path.setAttribute('stroke', '#0EA5E9'); // Light blue for detailed popup
+  updateLeaderLine(clear = false) {
+    // 引出线效果由于影响视距已取消
+    return;
   }
 
   clearLeaderLine() {
-    const path = document.getElementById('leader-line-path');
-    if (path) path.setAttribute('d', '');
+    this.updateLeaderLine(true);
   }
 
   render() {
@@ -108,6 +84,10 @@ export class MarkerPopup {
         <div class="m-meta-row">
           <span class="m-label">三维座标:</span>
           <span class="m-value mono">${coords}</span>
+        </div>
+        <div class="m-meta-row">
+          <span class="m-label">所属章节:</span>
+          <span class="m-value" style="color: #0052d9; font-weight: 600;">${m.ataLabel || '--'}</span>
         </div>
         <div class="m-meta-row">
           <span class="m-label">创建日期:</span>
