@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [viteSingleFile()],
   build: {
     outDir: 'dist',
-    assetsInlineLimit: 100 * 1024 * 1024, // 100MB to ensure all prototype assets are inlined
+    assetsInlineLimit: 100 * 1024 * 1024,
   },
   server: {
     port: 3000,

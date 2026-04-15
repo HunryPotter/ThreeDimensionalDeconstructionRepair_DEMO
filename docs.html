@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>工程手册 - 功能实现与架构逻辑说明</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>
+        mermaid.initialize({ 
+            startOnLoad: false,
+            theme: 'default',
+            securityLevel: 'loose',
+            flowchart: { useMaxWidth: true, htmlLabels: true }
+        });
+    </script>
+</head>
+<body>
+    <div id="docs-app">
+        <!-- Sidebar -->
+        <aside class="docs-sidebar">
+            <div class="sidebar-header">
+                <div class="logo">HANDBOOK</div>
+                <div class="project-name">三维结构修理原型系统</div>
+                <div class="version">Build 2026.04.15</div>
+            </div>
+            <nav class="sidebar-nav" id="sidebar-nav">
+                <!-- Dynamic navigation will be injected here -->
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="docs-content">
+            <header class="content-header">
+                <div id="breadcrumb">首页 / 工程手册</div>
+                <h1 id="content-title">项目现状分析报告</h1>
+            </header>
+            <article class="content-body" id="content-body">
+                <!-- Detailed content will be injected here -->
+                <div class="welcome-screen">
+                    <h2>欢迎阅读工程手册</h2>
+                    <p>本手册由产品经理整理，旨在为开发同事提供系统性的功能逻辑说明、数据结构定义及其交互机制。请通过左侧导航查看各模块详情。</p>
+                </div>
+            </article>
+        </main>
+    </div>
+    <script type="module" src="./src/docs/docs.js"></script>
+</body>
+</html>
