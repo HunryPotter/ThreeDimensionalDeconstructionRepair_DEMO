@@ -4,7 +4,6 @@ export class MarkerPopup {
     this.container = null;
     this.data = null;
     this.isVisible = false;
-    this.activeSectionTab = 'SR'; // Local tab state for SR/CRS toggle
     this.selectedId = null; // Track which specific SR/CRS is highlighted
     this.init();
   }
@@ -31,13 +30,9 @@ export class MarkerPopup {
     this.data = markerData;
     this.isVisible = true;
     
-    // Initial selection sync: Default to the first record of active tab if none set
     if (!this.selectedId) {
-      if (this.activeSectionTab === 'SR' && this.data.srRecords?.length > 0) {
+      if (this.data.srRecords?.length > 0) {
         this.selectedId = this.data.srRecords[0].id;
-      } else if (this.activeSectionTab === 'CRS') {
-        const firstCrs = this.data.srRecords?.flatMap(sr => sr.crsRecords || [])[0];
-        if (firstCrs) this.selectedId = firstCrs.id;
       }
     }
 
@@ -95,39 +90,41 @@ export class MarkerPopup {
         </div>
 
         <div class="m-action-section">
-          <div class="m-tab-header">
-            <div class="m-tab-item ${this.activeSectionTab === 'SR' ? 'active' : ''}" data-section="SR">维修申请 (SR)</div>
-            <div class="m-tab-item ${this.activeSectionTab === 'CRS' ? 'active' : ''}" data-section="CRS">修理方案 (CRS)</div>
+          <div class="m-section-block">
+            <div class="m-section-header">维修申请 (SR)</div>
+            <div class="m-doc-list">
+              ${(m.srRecords || []).map(sr => `
+                <div class="m-doc-item ${this.selectedId === sr.id ? 'selected' : ''}">
+                  <div class="m-doc-info">
+                    <span class="m-doc-type">SR</span>
+                    <span class="m-doc-id">${sr.id}</span>
+                  </div>
+                  <button class="m-btn-portal" data-target-type="SR" data-id="${sr.id}">查看详情</button>
+                </div>
+              `).join('')}
+              ${(!m.srRecords || m.srRecords.length === 0) ? '<div class="m-empty">暂无关联 SR 单据</div>' : ''}
+            </div>
           </div>
-          
-          <div class="m-tab-body">
-            ${this.activeSectionTab === 'SR' ? `
-              <div class="m-doc-list">
-                ${(m.srRecords || []).map(sr => `
-                  <div class="m-doc-item ${this.selectedId === sr.id ? 'selected' : ''}">
-                    <div class="m-doc-info">
-                      <span class="m-doc-type">SR</span>
-                      <span class="m-doc-id">${sr.id}</span>
+
+          <div class="m-section-block">
+            <div class="m-section-header">修理方案 (CRS)</div>
+            <div class="m-doc-list">
+              ${(m.srRecords || []).flatMap(sr => (sr.crsRecords || []).map(crs => ({ ...crs, parentSrId: sr.id }))).map(crs => `
+                <div class="m-doc-item ${this.selectedId === crs.id ? 'selected' : ''}">
+                  <div class="m-doc-info">
+                    <div class="m-doc-stacked">
+                      <div class="m-doc-main">
+                        <span class="m-doc-type crs">CRS</span>
+                        <span class="m-doc-id">${crs.id}</span>
+                      </div>
+                      <div class="m-doc-sub">来源: ${crs.parentSrId}</div>
                     </div>
-                    <button class="m-btn-portal" data-target-type="SR" data-id="${sr.id}">查看详情</button>
                   </div>
-                `).join('')}
-                ${(!m.srRecords || m.srRecords.length === 0) ? '<div class="m-empty">暂无关联 SR 单据</div>' : ''}
-              </div>
-            ` : `
-              <div class="m-doc-list">
-                ${(m.srRecords || []).flatMap(sr => (sr.crsRecords || []).map(crs => ({ ...crs, parentSrId: sr.id }))).map(crs => `
-                  <div class="m-doc-item ${this.selectedId === crs.id ? 'selected' : ''}">
-                    <div class="m-doc-info">
-                      <span class="m-doc-type crs">CRS</span>
-                      <span class="m-doc-id">${crs.id}</span>
-                    </div>
-                    <button class="m-btn-portal" data-target-type="CRS" data-id="${crs.id}" data-parent-sr="${crs.parentSrId}">查看详情</button>
-                  </div>
-                `).join('')}
-                ${!(m.srRecords && m.srRecords.some(sr => sr.crsRecords && sr.crsRecords.length > 0)) ? '<div class="m-empty">暂无关联 CRS 方案</div>' : ''}
-              </div>
-            `}
+                  <button class="m-btn-portal" data-target-type="CRS" data-id="${crs.id}" data-parent-sr="${crs.parentSrId}">查看详情</button>
+                </div>
+              `).join('')}
+              ${!(m.srRecords && m.srRecords.some(sr => sr.crsRecords && sr.crsRecords.length > 0)) ? '<div class="m-empty">暂无关联 CRS 方案</div>' : ''}
+            </div>
           </div>
         </div>
       </div>
@@ -142,57 +139,6 @@ export class MarkerPopup {
     if (closeBtn) {
       closeBtn.addEventListener('click', () => this.hide());
     }
-
-    // Tab switching with seamless sidebar sync (Context-Aware)
-    const tabs = this.container.querySelectorAll('.m-tab-item');
-    tabs.forEach(tab => {
-      tab.addEventListener('click', () => {
-        const section = tab.dataset.section;
-        const currentId = this.selectedId;
-        
-        // Find the SR context we are coming from or going to
-        let activeSr = null;
-        if (this.activeSectionTab === 'SR') {
-          activeSr = this.data.srRecords.find(sr => sr.id === currentId);
-        } else {
-          // If we were in CRS, find which SR it belonged to
-          activeSr = this.data.srRecords.find(sr => sr.crsRecords?.some(crs => crs.id === currentId));
-        }
-
-        let canSync = true;
-        let targetId = null;
-
-        if (section === 'CRS') {
-          // Rule: Only sync if the CURRENTLY SELECTED SR has CRS
-          if (activeSr && activeSr.crsRecords?.length > 0 && activeSr.manualStatus === 'published') {
-            targetId = activeSr.crsRecords[0].id;
-          } else {
-            canSync = false;
-          }
-        } else if (section === 'SR') {
-          // Always allow sync back to its parent SR
-          targetId = activeSr ? activeSr.id : (this.data.srRecords[0]?.id);
-        }
-
-        if (canSync && targetId) {
-          this.selectedId = targetId;
-          window.dispatchEvent(new CustomEvent('damage-marker-select', { 
-            detail: {
-              ...this.data,
-              forceTab: section,
-              targetSrId: activeSr ? activeSr.id : targetId
-            }
-          }));
-        } else if (section === 'CRS' && !canSync) {
-          // Contextual sync: If current SR has no CRS, close the right panel
-          if (window.app) window.app.toggleRightPanel(false);
-        }
-
-        this.activeSectionTab = section;
-        this.render();
-        this.initEvents();
-      });
-    });
 
     const portalBtns = this.container.querySelectorAll('.m-btn-portal');
     portalBtns.forEach(btn => {
@@ -224,17 +170,22 @@ export class MarkerPopup {
   }
 
   addStyles() {
+    const styleId = 'marker-popup-styles';
+    if (document.getElementById(styleId)) return;
+
     const style = document.createElement('style');
+    style.id = styleId;
     style.textContent = `
       .marker-detail-popup {
         position: absolute;
-        top: 40%;
-        left: 65%;
-        width: 280px;
-        background: rgba(255, 255, 255, 0.8);
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 520px;
+        background: rgba(255, 255, 255, 0.85);
         backdrop-filter: blur(12px);
         border: 1px solid rgba(0, 0, 0, 0.05);
-        border-radius: 6px;
+        border-radius: 8px;
         box-shadow: 
           0 10px 40px rgba(0, 0, 0, 0.1), 
           0 0 1px rgba(0, 0, 0, 0.1);
@@ -297,46 +248,48 @@ export class MarkerPopup {
         margin-top: 14px;
         padding-top: 10px;
         border-top: 1px solid rgba(0, 0, 0, 0.05);
-      }
-
-      .m-tab-header {
         display: flex;
-        gap: 12px;
-        margin-bottom: 10px;
-        border-bottom: 1px solid #f1f5f9;
-        padding-bottom: 4px;
+        gap: 16px;
       }
 
-      .m-tab-item {
-        font-size: 11px;
+      .m-section-block {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .m-section-block:not(:last-child) {
+        border-right: 1px solid #f1f5f9;
+        padding-right: 12px;
+      }
+
+      .m-section-header {
+        font-size: 10px;
         color: #94a3b8;
-        cursor: pointer;
-        padding: 4px 0;
-        position: relative;
-        font-weight: 600;
-        transition: color 0.2s;
+        padding-bottom: 4px;
+        margin-bottom: 6px;
+        border-bottom: 1px solid #f1f5f9;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
       }
 
-      .m-tab-item:hover { color: #475569; }
-
-      .m-tab-item.active {
-        color: #0052d9;
+      .m-doc-list { 
+        display: flex; 
+        flex-direction: column; 
+        gap: 4px; 
+        max-height: 120px;
+        overflow-y: auto;
+        padding-right: 2px;
       }
 
-      .m-tab-item.active::after {
-        content: '';
-        position: absolute;
-        bottom: -5px;
-        left: 0;
-        width: 100%;
-        height: 2px;
-        background: #0052d9;
-        border-radius: 1px;
+      .m-doc-list::-webkit-scrollbar {
+        width: 3px;
       }
-
-      .m-tab-body { min-height: 100px; }
-
-      .m-doc-list { display: flex; flex-direction: column; gap: 4px; }
+      .m-doc-list::-webkit-scrollbar-thumb {
+        background: #e2e8f0;
+        border-radius: 3px;
+      }
 
       .m-doc-item {
         background: #f8fafc;
@@ -355,7 +308,10 @@ export class MarkerPopup {
         box-shadow: 0 0 0 1px #0052d9;
       }
 
-      .m-doc-info { display: flex; align-items: center; gap: 6px; }
+      .m-doc-info { display: flex; align-items: center; gap: 6px; flex: 1; }
+      .m-doc-stacked { display: flex; flex-direction: column; gap: 1px; }
+      .m-doc-main { display: flex; align-items: center; gap: 6px; }
+      .m-doc-sub { font-size: 9px; color: #94a3b8; font-style: italic; }
       .m-doc-type {
         font-size: 8px;
         background: #0052d9;
@@ -363,6 +319,7 @@ export class MarkerPopup {
         padding: 1px 4px;
         border-radius: 3px;
         font-weight: 800;
+        flex-shrink: 0;
       }
       .m-doc-type.crs { background: #8b5cf6; } 
       .m-doc-id { font-size: 11px; font-weight: 700; color: #334155; }

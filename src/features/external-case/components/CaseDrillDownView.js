@@ -33,7 +33,15 @@ export class CaseDrillDownView {
         </div>
 
         ${sidebar.activeTab === 'ata-view' ? `
-        <div class="search-tool-area filter-section" style="padding: 12px 16px; border-bottom: 1px solid rgba(0,0,0,0.06); margin-bottom: 4px; background: rgba(245,245,245,0.3);">
+        <!-- Search & Tools Section Toggle -->
+        <div class="filter-toggle-header" id="btn-toggle-filters-case" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; background: rgba(0,0,0,0.02); cursor: pointer; border-bottom: 1px solid rgba(0,0,0,0.05);">
+          <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+             <span style="font-size: 12px;">🔍</span> 过滤与搜索
+          </div>
+          <span class="filter-chevron" style="font-size: 10px; color: #94a3b8; transition: transform 0.3s; transform: ${sidebar.isAtaFilterExpanded ? 'rotate(180deg)' : 'rotate(0deg)'}">▼</span>
+        </div>
+
+        <div class="search-tool-area filter-section" style="padding: 12px 16px; border-bottom: 1px solid rgba(0,0,0,0.06); margin-bottom: 4px; background: rgba(245,245,245,0.3); display: ${sidebar.isAtaFilterExpanded ? 'block' : 'none'};">
           
           ${sidebar.renderDropdownField('drill-manual-filter', '飞机状态', [
             { label: '全部状态', value: 'all' },
@@ -93,9 +101,12 @@ export class CaseDrillDownView {
         `}
         
         <div class="sidebar-footer">
-          <div class="footer-actions" style="grid-template-columns: 1fr;">
-            <button class="btn-confirm" id="btn-case-action-integrated" style="display: flex; align-items: center; justify-content: center; gap: 8px; background: #0052d9; color: white;">
-              <span id="case-btn-text">开始三维标记</span>
+          <div class="footer-actions" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px 16px;">
+            <button class="btn-back-footer" id="btn-case-return-to-l1" style="width: 100%; justify-content: center; background: #f8fafc; border: 1px solid #e2e8f0; color: #64748b; font-size: 12px; font-weight: 600;">
+               回传至 CASE 系统
+            </button>
+            <button class="btn-confirm" id="btn-case-start-marking" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; background: #0052d9; color: white;">
+              <span style="font-size: 14px;">🖌️</span> 三维标记
             </button>
           </div>
         </div>
@@ -125,6 +136,16 @@ export class CaseDrillDownView {
 
   initEvents() {
     const { sidebar } = this;
+
+    // Toggle Filters Section
+    const toggleFiltersBtn = sidebar.container.querySelector('#btn-toggle-filters-case');
+    if (toggleFiltersBtn) {
+      toggleFiltersBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sidebar.isAtaFilterExpanded = !sidebar.isAtaFilterExpanded;
+        sidebar.render();
+      });
+    }
 
     // Reset button
     const resetBtn = sidebar.container.querySelector('#btn-case-drill-reset');
@@ -160,11 +181,19 @@ export class CaseDrillDownView {
       });
     });
 
-    // Integrated Action Button
-    const actionBtn = sidebar.container.querySelector('#btn-case-action-integrated');
-    if (actionBtn) {
-      actionBtn.addEventListener('click', () => {
-        window.dispatchEvent(new CustomEvent('trigger-case-primary-action'));
+    // 1. Start Marking Button (Right)
+    const startMarkingBtn = sidebar.container.querySelector('#btn-case-start-marking');
+    if (startMarkingBtn) {
+      startMarkingBtn.addEventListener('click', () => {
+        window.dispatchEvent(new CustomEvent('trigger-case-primary-action', { detail: { action: 'start-marking' } }));
+      });
+    }
+
+    // 2. Return Button (Left)
+    const returnToL1Btn = sidebar.container.querySelector('#btn-case-return-to-l1');
+    if (returnToL1Btn) {
+      returnToL1Btn.addEventListener('click', () => {
+        window.dispatchEvent(new CustomEvent('trigger-case-primary-action', { detail: { action: 'return-l1' } }));
       });
     }
 

@@ -34,6 +34,17 @@ export class NavigationBar {
 
     this.addStyles();
     this.startClock();
+    this.initEvents();
+  }
+
+  initEvents() {
+    const btnBack = this.container.querySelector('.back-btn');
+    if (btnBack) {
+      btnBack.addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.dispatchEvent(new CustomEvent('return-to-home'));
+      });
+    }
   }
 
   startClock() {

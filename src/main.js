@@ -10,6 +10,7 @@ import { SpatialView } from './features/spatial-view/SpatialView.js';
 import { PopupManager } from './components/PopupManager.js';
 import { MarkerPopup } from './components/MarkerPopup.js';
 import { ExternalCaseView } from './features/external-case/ExternalCaseView.js';
+import { LandingPage } from './features/landing-page/LandingPage.js';
 
 class App {
     constructor() {
@@ -19,9 +20,69 @@ class App {
         // 0. External Site View (Background)
         this.externalView = new ExternalCaseView(document.body);
 
-        this.viewLevel = 1; // Default to layer 1
-        this.init();
+        // 1. Start with Landing Page (View Level 0)
+        this.viewLevel = 0;
+        this.initCoreListeners();
+        this.initLandingPage();
+    }
+
+    initLandingPage() {
+        // Hide main container during landing
+        this.container.style.display = 'none';
+
+        const landingContainer = document.createElement('div');
+        landingContainer.id = 'landing-mount';
+        document.body.appendChild(landingContainer);
+
+        this.landingPage = new LandingPage(landingContainer, (choice) => {
+            if (choice === 'CASE') {
+                this.enterCaseSystem();
+            } else if (choice === 'DIGITAL_TWIN') {
+                this.enterDigitalTwin();
+            }
+        });
+    }
+
+    enterCaseSystem() {
+        console.log('Navigating to: 正向业务流程—CASE系统');
+        const landingMount = document.getElementById('landing-mount');
+        if (landingMount) landingMount.style.display = 'none';
+
+        // Unified Entry: Trigger the same logic as the "Initiate Technical Request" button
+        window.dispatchEvent(new CustomEvent('initiate-technical-request'));
+    }
+
+    enterDigitalTwin() {
+        console.log('Navigating to: 数字飞机');
+        const landingMount = document.getElementById('landing-mount');
+        if (landingMount) landingMount.style.display = 'none';
+
+        this.container.style.display = 'grid'; // Restore main grid
+        this.container.classList.remove('left-collapsed'); // Ensure it's not hidden
+
+        this.viewLevel = 1;
+        this.init(); // Initialize main components
         this.updateViewLevelClass();
+    }
+
+    returnToHome() {
+        console.log('Returning to Home...');
+        
+        // 1. Hide CASE if visible
+        this.externalView.hide();
+        
+        // 2. Hide Main Container
+        this.container.style.display = 'none';
+        
+        // 3. Show Landing Page
+        const landingMount = document.getElementById('landing-mount');
+        if (landingMount) {
+            landingMount.style.display = 'block';
+        } else {
+            this.initLandingPage();
+        }
+        
+        this.viewLevel = 0;
     }
 
     updateViewLevelClass() {
@@ -32,11 +93,48 @@ class App {
     setViewLevel(level) {
         this.viewLevel = level;
         this.updateViewLevelClass();
+
+        // Default to collapsed in Level 2 entry unless a marker is explicitly selected
+        if (level === 2) {
+            this.toggleRightPanel(false);
+        }
+
         // Force refresh components that care about level
         if (this.rightSidebar) this.rightSidebar.render();
     }
 
+    initCoreListeners() {
+        // External Navigation Logic (Always active from startup)
+        window.addEventListener('initiate-technical-request', () => {
+            console.log('Jumping to External CASE System...');
+            this.container.style.display = 'none';
+            this.externalView.show();
+        });
+
+        window.addEventListener('return-from-external', () => {
+            console.log('Returning from External Case...');
+            this.returnToHome();
+        });
+
+        window.addEventListener('return-to-home', () => {
+            this.returnToHome();
+        });
+
+        // Global bridge from Digital Twin -> CASE
+        window.addEventListener('confirm-technical-request', () => {
+            // Restore the popup manager with current record before jumping
+            if (this.popupManager && this.popupManager.records) {
+                this.popupManager.show(this.popupManager.records, this.popupManager.data.id, 'SR');
+            }
+            // Trigger jump
+            window.dispatchEvent(new CustomEvent('initiate-technical-request'));
+        });
+    }
+
     init() {
+        if (this.initialized) return;
+        this.initialized = true;
+
         // 1. Create Region Containers
         const headerEl = document.createElement('header');
         headerEl.className = 'header-region';
@@ -84,7 +182,7 @@ class App {
 
         window.addEventListener('damage-marker-select', (e) => {
             if (window.app.viewLevel !== 2) return;
-            
+
             const selectedMarker = e.detail;
             this.leftSidebar.selectRecord(selectedMarker.id);
 
@@ -97,17 +195,17 @@ class App {
 
         window.addEventListener('ata-branch-select', (e) => {
             const { ataCode, label } = e.detail;
-            
+
             // Strictly ATA-Twig Association: Fetch all markers sharing the same ATA code (inclusive of sub-branches)
-            const related = this.leftSidebar.markerData.filter(m => 
+            const related = this.leftSidebar.markerData.filter(m =>
                 m.ataCode.startsWith(ataCode)
             );
-            
+
             if (related.length > 0) {
                 this.popupManager.show(related, related[0].id, { ataCode, label });
                 // Hide specific popup if it was showing a different marker
                 this.markerPopup.hide();
-                
+
                 // SYNC: Tell the right sidebar to update its context if it's currently focused on CR
                 window.dispatchEvent(new CustomEvent('sync-sidebar-context', {
                     detail: { markerData: related[0] }
@@ -140,35 +238,13 @@ class App {
                 }
             } else if (this.leftSidebar.selectedBranchId) {
                 // If it was a branch-level focus, restore the summary popup based on containment
-                const related = this.leftSidebar.markerData.filter(m => 
+                const related = this.leftSidebar.markerData.filter(m =>
                     m.ataCode.startsWith(this.leftSidebar.selectedBranchId)
                 );
                 if (related.length > 0) {
                     this.popupManager.show(related, related[0].id);
                 }
             }
-        });
-
-        window.addEventListener('confirm-technical-request', () => {
-            // Restore the popup manager with current record before jumping
-            if (this.popupManager.records) {
-                this.popupManager.show(this.popupManager.records, this.popupManager.data.id, 'SR');
-            }
-            // Trigger jump
-            window.dispatchEvent(new CustomEvent('initiate-technical-request'));
-        });
-
-        // External Navigation Logic
-        window.addEventListener('initiate-technical-request', () => {
-            console.log('Jumping to External CASE System...');
-            this.container.style.display = 'none';
-            this.externalView.show();
-        });
-
-        window.addEventListener('return-from-external', () => {
-            console.log('Returning from External Case...');
-            this.externalView.hide();
-            this.container.style.display = ''; // Restore to CSS default (grid)
         });
 
         console.log('COMAC 3D Structural Repair System - Standardized Load Complete');

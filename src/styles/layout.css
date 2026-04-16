@@ -16,6 +16,14 @@
     grid-template-columns: 0px 1fr var(--right-panel-width);
 }
 
+#app-container.right-collapsed {
+    grid-template-columns: var(--left-panel-width) 1fr 0px;
+}
+
+#app-container.right-collapsed.left-collapsed {
+    grid-template-columns: 0px 1fr 0px;
+}
+
 .standard-grid-layout.right-collapsed.left-collapsed {
     grid-template-columns: 0px 1fr 0px;
 }

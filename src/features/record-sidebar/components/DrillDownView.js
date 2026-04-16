@@ -30,8 +30,15 @@ export class DrillDownView {
         </div>
 
         ${sidebar.activeTab === 'ata-view' ? `
-        <!-- Search & Tools Section -->
-        <div class="search-tool-area filter-section" style="padding: 12px 16px; border-bottom: 1px solid rgba(0,0,0,0.06); margin-bottom: 4px; background: rgba(245,245,245,0.3);">
+        <!-- Search & Tools Section Toggle -->
+        <div class="filter-toggle-header" id="btn-toggle-filters" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; background: rgba(0,0,0,0.02); cursor: pointer; border-bottom: 1px solid rgba(0,0,0,0.05);">
+          <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+             <span style="font-size: 12px;">🔍</span> 过滤与搜索
+          </div>
+          <span class="filter-chevron" style="font-size: 10px; color: #94a3b8; transition: transform 0.3s; transform: ${sidebar.isAtaFilterExpanded ? 'rotate(180deg)' : 'rotate(0deg)'}">▼</span>
+        </div>
+
+        <div class="search-tool-area filter-section" style="padding: 12px 16px; border-bottom: 1px solid rgba(0,0,0,0.06); margin-bottom: 4px; background: rgba(245,245,245,0.3); display: ${sidebar.isAtaFilterExpanded ? 'block' : 'none'};">
           
           ${sidebar.renderDropdownField('drill-manual-filter', '飞机状态', [
             { label: '全部状态', value: 'all' },
@@ -197,6 +204,16 @@ export class DrillDownView {
             context: { mode: 'local-component', ataCode: sidebar.selectedBranchId }
           }
         }));
+      });
+    }
+
+    // Toggle Filters Section
+    const toggleFiltersBtn = sidebar.container.querySelector('#btn-toggle-filters');
+    if (toggleFiltersBtn) {
+      toggleFiltersBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sidebar.isAtaFilterExpanded = !sidebar.isAtaFilterExpanded;
+        sidebar.render();
       });
     }
 

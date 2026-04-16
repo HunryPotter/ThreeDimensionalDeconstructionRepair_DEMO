@@ -1,4 +1,4 @@
-import './docs.css';
+﻿import './docs.css';
 
 /**
  * Engineering Handbook Data - 由产品经理整理，旨在为开发同事提供系统性的功能逻辑说明。
@@ -86,7 +86,7 @@ const HANDBOOK_DATA = {
             {
                 id: '0.6',
                 title: '0.6 弹窗与交互逻辑管理',
-                description: '协同管理 Summary（汇总）与 Individual（单条）视图。',
+                description: '协同管理 Summary（汇总）与 Individual（单条）视图，主应用与 CASE 系统采用不同的协调策略。',
                 level: ['Architecture'],
                 details: `
                     ### 核心逻辑 (Core Logic)
@@ -304,6 +304,49 @@ const HANDBOOK_DATA = {
                 `
             }
         ]
+    },
+    '6. CASE 系统冷启动架构 (Cold-Start)': {
+        items: [
+            {
+                id: '6.1',
+                title: '6.1 CASE 系统冷启动能力设计',
+                description: 'ExternalCaseView 已重构为完全自给自足的独立模块，支持从主页直接进入而无需经过数字飞机的初始化流程（App.init()）。',
+                level: ['Architecture', 'CASE'],
+                details: `
+                    ### 根本原因
+
+                    冷启动时 .confirm-dialog CSS 缺失：该样式定义在 SpatialView.addStyles() 内，只有主应用走 App.init() 路径时才会注入到 head。
+                    从主页直接进入 CASE，App.init() 从未被调用，弹窗被 display:block 但因无样式尺寸为0，用户误以为按钮失效。
+
+                    L2 导航自动弹窗：hide() 仅隐藏容器，未重置子弹窗 display 状态，再次打开时残留状态导致弹窗自动显现。
+
+                    ### 修复方案
+                    1. CSS 内联：将 .confirm-dialog 等所有弹窗样式直接写入 ExternalCaseView.addStyles()，改为 position:fixed z-index:30000。
+                    2. 状态清洗：hide() 显式重置所有弹窗 display:none 和 selectedAircraft=null。
+                    3. 布局隔离：.case-info-panel 改为 position:fixed 逃离 PDF embed 插件层。
+
+                    ### 关键注意事项
+                    - window.app.viewLevel 必须手动管理：DetailSidebar.render() 检查 viewLevel===2，否则强制关闭右侧面板。进入标记模式设为2，退出时重置为0。
+                    - 弹窗实例每次进入都必须重建：SpatialView 初始化清空 mainMount DOM，旧实例容器脱离文档树。
+                    - _evBound 单次注册模式：监听器只注册一次，通过 markerEntryActive 守卫控制，通过 this.caseXxx 引用访问最新实例。
+                `
+            },
+            {
+                id: '6.2',
+                title: '6.2 CASE 标记页面事件总线',
+                description: 'CASE 标记模式下，全局事件的拦截与转发逻辑。',
+                level: ['Events', 'CASE'],
+                subItems: [
+                    { id: 'E1', title: 'damage-marker-select (无forceTab)', implementation: 'ExternalCaseView._evBound', details: '呼出 caseMarkerPopup，隐藏 casePopupManager' },
+                    { id: 'E2', title: 'damage-marker-select (有forceTab)', implementation: 'ExternalCaseView._evBound', details: '呼出弹窗 + 更新 caseRightSidebar + 打开右侧面板' },
+                    { id: 'E3', title: 'show-sidebar-detail', implementation: 'ExternalCaseView._evBound', details: '更新 caseRightSidebar + 打开右侧面板' },
+                    { id: 'E4', title: 'site-click', implementation: 'ExternalCaseView._evBound', details: '呼出 casePopupManager，隐藏 caseMarkerPopup' },
+                    { id: 'E5', title: 'ata-branch-select', implementation: 'ExternalCaseView._evBound', details: '过滤 markerData 后呼出 casePopupManager' },
+                    { id: 'E6', title: 'trigger-case-primary-action', implementation: 'ExternalCaseView.show()', details: 'start-marking 进入绘制模式；return-l1 回传并退出' },
+                    { id: 'E7', title: 'request-case-button-sync', implementation: 'ExternalCaseView._evBound', details: '调用 updateMarkerButton() 同步底部按钮状态' }
+                ]
+            }
+        ]
     }
 };
 
@@ -452,3 +495,4 @@ class DocsApp {
 document.addEventListener('DOMContentLoaded', () => {
     new DocsApp();
 });
+

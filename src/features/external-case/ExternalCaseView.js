@@ -38,25 +38,23 @@ export class ExternalCaseView {
       <div id="external-case-container" class="external-view" style="display: none;">
         <!-- Original CASE System View -->
         <div id="case-main-view" class="case-main-layout">
-            <!-- Embedded PDF Site -->
-            <div class="pdf-frame-wrapper">
-              <embed src="${casePdf}" type="application/pdf" width="100%" height="100%" />
-            </div>
-
-            <!-- Float Return Action -->
-            <button id="btn-return-to-app" class="float-return-btn">
-              <span class="icon">➔</span> 返回系统
-            </button>
-
-            <!-- Overlay Banner -->
+            <!-- Overlay Header (Fixed on Top) -->
             <div class="external-header">
                 <div class="external-logo">CASE 业务系统</div>
                 <div class="external-header-actions">
                   <div class="external-status">仿真环境运营中</div>
+                  <button id="btn-return-to-app" class="btn-case-return">
+                    <span style="font-size:12px; margin-right:4px;">➔</span> 返回首页
+                  </button>
                 </div>
             </div>
 
-            <!-- Case Details / Theme Panel -->
+            <!-- Embedded PDF Site (Flex Grow) -->
+            <div class="pdf-frame-wrapper">
+              <embed src="${casePdf}" type="application/pdf" width="100%" height="100%" />
+            </div>
+
+            <!-- Case Details / Theme Panel (Fixed Width) -->
             <div class="case-info-panel">
                 <div class="info-section marker-theme-section">
                     <h4 class="section-title">三维损伤标记</h4>
@@ -125,60 +123,114 @@ export class ExternalCaseView {
   }
 
   initEvents() {
-    const returnBtn = this.container.querySelector('#btn-return-to-app');
-    if (returnBtn) {
-      returnBtn.addEventListener('click', () => {
-        this.hide(); // Ensure hidden when returning
-        window.dispatchEvent(new CustomEvent('return-from-external'));
-      });
-    }
+    // 1. Level 1 & Level 2 Click Delegator
+    // We bind to this.container and stop propagation to prevent collisions with the main app entry events
+    const container = this.container.querySelector('#external-case-container');
+    if (container) {
+      container.addEventListener('click', (e) => {
+        // Stop bubbling to window to prevent L2 auto-triggering when CASE shows up
+        e.stopPropagation();
 
-    const initiateBtn = this.container.querySelector('#btn-initiate-marker');
-    if (initiateBtn) {
-      initiateBtn.addEventListener('click', () => {
-        this.showAircraftSelector();
-      });
-    }
+        // 1. Initial Entry Button (Start Marking)
+        const initiateBtn = e.target.closest('#btn-initiate-marker');
+        if (initiateBtn) {
+          this.showAircraftSelector();
+          return;
+        }
 
-    // Delete Marker Events
-    const deleteBtn = this.container.querySelector('#btn-delete-marker');
-    const deleteConfirm = this.container.querySelector('#case-delete-confirm');
-    if (deleteBtn && deleteConfirm) {
-      deleteBtn.addEventListener('click', () => {
-        deleteConfirm.style.display = 'block';
-      });
+        // 2. Return to Main Page
+        const returnBtn = e.target.closest('#btn-return-to-app');
+        if (returnBtn) {
+          this.hide();
+          window.dispatchEvent(new CustomEvent('return-from-external'));
+          return;
+        }
 
-      deleteConfirm.querySelector('#btn-delete-no').addEventListener('click', () => {
-        deleteConfirm.style.display = 'none';
-      });
+        // 3. Delete Marking Logic
+        const deleteBtn = e.target.closest('#btn-delete-marker');
+        if (deleteBtn) {
+          const dialog = document.querySelector('#case-delete-confirm');
+          if (dialog) dialog.style.display = 'block';
+          return;
+        }
 
-      deleteConfirm.querySelector('#btn-delete-yes').addEventListener('click', () => {
-        deleteConfirm.style.display = 'none';
-        this.hasMarker = false;
-        this.updateThemeUI();
-      });
-    }
+        const deleteYes = e.target.closest('#btn-delete-yes');
+        if (deleteYes) {
+          const dialog = document.querySelector('#case-delete-confirm');
+          if (dialog) dialog.style.display = 'none';
+          this.hasMarker = false;
+          this.markerState = 0;
+          this.updateThemeUI();
+          this.updateMarkerButton();
+          return;
+        }
 
-    // Aircraft Selector Events
-    const aircraftSelector = this.container.querySelector('#case-aircraft-selector');
-    if (aircraftSelector) {
-      aircraftSelector.querySelector('#btn-aircraft-cancel').addEventListener('click', () => {
-        aircraftSelector.style.display = 'none';
-      });
+        const deleteNo = e.target.closest('#btn-delete-no');
+        if (deleteNo) {
+          const dialog = document.querySelector('#case-delete-confirm');
+          if (dialog) dialog.style.display = 'none';
+          return;
+        }
 
-      aircraftSelector.querySelector('#btn-aircraft-confirm').addEventListener('click', () => {
-        if (this.selectedAircraft) {
-          aircraftSelector.style.display = 'none';
-          this.enterMarkerEntryMode();
+        // 4. Aircraft Selector Popup Actions
+        const cancelAc = e.target.closest('#btn-aircraft-cancel');
+        if (cancelAc) {
+          const selector = document.querySelector('#case-aircraft-selector');
+          if (selector) selector.style.display = 'none';
+          return;
+        }
+
+        const confirmAc = e.target.closest('#btn-aircraft-confirm');
+        if (confirmAc) {
+          if (this.selectedAircraft) {
+            const selector = document.querySelector('#case-aircraft-selector');
+            if (selector) selector.style.display = 'none';
+            this.enterMarkerEntryMode();
+          }
+          return;
+        }
+
+        // 5. Entry Cancel (L2 NavBar)
+        const cancelEntry = e.target.closest('#btn-cancel-entry');
+        if (cancelEntry) {
+          this.exitMarkerEntryMode();
+          return;
         }
       });
     }
 
-    const cancelBtn = this.container.querySelector('#btn-cancel-entry');
-    if (cancelBtn) {
-      cancelBtn.addEventListener('click', () => {
-        this.exitMarkerEntryMode();
+    // 2. State Synchronization Listeners (One-time registration)
+    if (!this._globalBound) {
+      window.addEventListener('confirm-delete-action', () => {
+        if (this.markerEntryActive) {
+          this.markerState = 0;
+          this.updateMarkerButton();
+          window.dispatchEvent(new CustomEvent('exit-interaction-modes'));
+        }
       });
+
+      window.addEventListener('trigger-case-primary-action', (e) => {
+        if (!this.markerEntryActive) return;
+        this.handlePrimaryAction(e.detail?.action);
+      });
+
+      window.addEventListener('save-user-markup', () => {
+        if (this.markerEntryActive) {
+          this.markerState = 2;
+          this.updateMarkerButton();
+        }
+      });
+
+      window.addEventListener('case-sidebar-toggle', (e) => {
+        if (!this.markerEntryActive) return;
+        const entryView = document.querySelector('#marker-entry-view');
+        if (entryView) {
+          if (e.detail.isCollapsed) entryView.classList.add('left-collapsed');
+          else entryView.classList.remove('left-collapsed');
+        }
+      });
+
+      this._globalBound = true;
     }
   }
 
@@ -214,13 +266,23 @@ export class ExternalCaseView {
     selector.style.display = 'block';
   }
 
-  enterMarkerEntryMode() {
+  enterMarkerEntryMode(aircraft = null) {
+    if (aircraft) {
+      this.selectedAircraft = aircraft;
+    }
     this.markerEntryActive = true;
     this.markerState = 0; // Reset state on entry
 
+    // Set viewLevel to 2 so DetailSidebar allows right panel to open
+    // (DetailSidebar.render() checks viewLevel===2 to allow right panel)
+    if (window.app) window.app.viewLevel = 2;
+
     const entryView = this.container.querySelector('#marker-entry-view');
     const mainView = this.container.querySelector('#case-main-view');
-    if (entryView) entryView.style.display = 'grid';
+    if (entryView) {
+      entryView.style.display = 'grid';
+      entryView.classList.add('right-collapsed');
+    }
     if (mainView) mainView.style.display = 'none';
 
     const headerMount = this.container.querySelector('#marker-header-mount');
@@ -277,19 +339,35 @@ export class ExternalCaseView {
     this.updateMarkerButton();
 
     // 5. Initialize Popups within the main mount
-    if (!this.casePopupManager) {
-      this.casePopupManager = new PopupManager(mainMount);
-    }
-    if (!this.caseMarkerPopup) {
-      this.caseMarkerPopup = new MarkerPopup(mainMount);
-    }
+    // Always recreate them because SpatialView rebuilds the DOM on each entry,
+    // which detaches any previously created popup containers.
+    this.casePopupManager = new PopupManager(mainMount);
+    this.caseMarkerPopup = new MarkerPopup(mainMount);
 
     // 6. Context-Aware Event Handling:
     if (!this._evBound) {
       window.addEventListener('damage-marker-select', (e) => {
         if (!this.markerEntryActive) return;
+        
+        // Positive Selection Sync: Update Sidebar state when a marker is selected (either from list or 3D)
+        if (this.caseLeftSidebar && e.detail.id !== this.caseLeftSidebar.selectedMarkerId) {
+          this.caseLeftSidebar.selectRecord(e.detail.id);
+        }
+
         this.caseMarkerPopup.show(e.detail);
         this.casePopupManager.hide();
+        this.updateMarkerButton();
+
+        // If user clicked a portal button (SR/CRS view detail), open right sidebar
+        if (e.detail.forceTab) {
+          if (this.caseRightSidebar) {
+            this.caseRightSidebar.markerData = e.detail;
+            this.caseRightSidebar.activeInnerTab = e.detail.forceTab;
+            if (e.detail.targetSrId) this.caseRightSidebar.selectedSrId = e.detail.targetSrId;
+            this.caseRightSidebar.render();
+          }
+          this.toggleRightPanel(true);
+        }
       });
 
       window.addEventListener('site-click', (e) => {
@@ -298,6 +376,7 @@ export class ExternalCaseView {
         if (siteData.isExisting && siteData.records.length > 0) {
           this.casePopupManager.show(siteData.records, siteData.records[0].id);
           this.caseMarkerPopup.hide();
+          this.updateMarkerButton();
         }
       });
 
@@ -311,31 +390,31 @@ export class ExternalCaseView {
             this.casePopupManager.show(records, records[0].id);
             this.caseMarkerPopup.hide();
           }
+          this.updateMarkerButton();
         }
+      });
+
+      // Fix: DetailSidebar calls window.app.toggleRightPanel() which operates on app-container.
+      // Intercept show-sidebar-detail here to call the CASE-specific right panel toggle instead.
+      window.addEventListener('show-sidebar-detail', (e) => {
+        if (!this.markerEntryActive) return;
+        if (this.caseRightSidebar) {
+          this.caseRightSidebar.markerData = e.detail.markerData;
+          this.caseRightSidebar.activeInnerTab = e.detail.type || 'SR';
+          this.caseRightSidebar.render();
+        }
+        this.toggleRightPanel(true);
+      });
+
+      // Fix: CaseDrillDownView.syncButtonState() dispatches this event.
+      // Was removed in a previous refactor. Restoring it.
+      window.addEventListener('request-case-button-sync', () => {
+        if (!this.markerEntryActive) return;
+        this.updateMarkerButton();
       });
 
       this._evBound = true;
     }
-
-    // Integrated Action Listeners (from Sidebar)
-    window.addEventListener('request-case-button-sync', () => {
-      if (!this.markerEntryActive) return;
-      this.updateMarkerButton();
-    });
-
-    window.addEventListener('trigger-case-primary-action', () => {
-      if (!this.markerEntryActive) return;
-      this.handlePrimaryAction();
-    });
-
-    window.addEventListener('case-sidebar-toggle', (e) => {
-      if (!this.markerEntryActive) return;
-      const entryView = this.container.querySelector('#marker-entry-view');
-      if (entryView) {
-        if (e.detail.isCollapsed) entryView.classList.add('left-collapsed');
-        else entryView.classList.remove('left-collapsed');
-      }
-    });
 
     this.updateMarkerButton();
     console.log('CASE Marking Workspace Initialized with High-Fidelity Components');
@@ -353,7 +432,19 @@ export class ExternalCaseView {
     }
   }
 
-  handlePrimaryAction() {
+  handlePrimaryAction(actionType) {
+    if (actionType === 'return-l1') {
+      const selectedId = this.caseLeftSidebar?.selectedMarkerId;
+      if (!selectedId) return;
+
+      this.linkedMarkerId = selectedId;
+      this.hasMarker = true;
+      this.updateThemeUI();
+      this.exitMarkerEntryMode();
+      return;
+    }
+
+    // Default: Start Marking flow
     if (this.markerState === 0) {
       if (!this.caseLeftSidebar.selectedBranchId) {
         window.dispatchEvent(new CustomEvent('request-internal-alert', {
@@ -368,15 +459,17 @@ export class ExternalCaseView {
       window.dispatchEvent(new CustomEvent('enter-drawing-mode', {
         detail: {
           context: 'case-system',
+          mode: 'local-component', // Enabling naming dialog logic in SpatialView
           ataCode: this.caseLeftSidebar.selectedBranchId,
           aircraft: this.selectedAircraft,
+          associatedAircraft: [this.selectedAircraft], // Automatically bypassing internal aircraft selection
           caseRef: this
         }
       }));
       this.markerState = 1;
       this.updateMarkerButton();
     } else if (this.markerState === 2) {
-      // Direct return as requested
+      // Logic for confirming newly created marker
       this.hasMarker = true;
       this.updateThemeUI();
       this.exitMarkerEntryMode();
@@ -398,29 +491,48 @@ export class ExternalCaseView {
         this.updateMarkerButton();
       }
     });
+
+    // Handle state transition after naming popup is confirmed (local-component mode)
+    window.addEventListener('save-user-markup', () => {
+      if (this.markerEntryActive) {
+        this.markerState = 2;
+        this.updateMarkerButton();
+      }
+    });
   }
 
   updateMarkerButton() {
-    // Current integrated button info from CaseDrillDownView
-    const btnText = this.container.querySelector('#case-btn-text');
-    const actionBtn = this.container.querySelector('#btn-case-action-integrated');
-    if (!btnText || !actionBtn) return;
+    const returnBtn = this.container.querySelector('#btn-case-return-to-l1');
+    const startBtn = this.container.querySelector('#btn-case-start-marking');
+    if (!returnBtn || !startBtn) return;
 
-    if (this.markerState === 0) {
-      btnText.innerHTML = `<span style="font-size: 14px;">🖌️</span> 开始三维标记`;
-      actionBtn.disabled = false;
-      actionBtn.style.background = '#0052d9';
-      actionBtn.style.opacity = '1';
-    } else if (this.markerState === 1) {
-      btnText.innerHTML = `正在标记中...`;
-      actionBtn.disabled = true;
-      actionBtn.style.background = '#64748b';
-      actionBtn.style.opacity = '0.6';
-    } else if (this.markerState === 2) {
-      btnText.innerHTML = `🏁 确认回传数据至 CASE`;
-      actionBtn.disabled = false;
-      actionBtn.style.background = '#22c55e'; // Green for completion
-      actionBtn.style.opacity = '1';
+    const hasSelection = this.caseLeftSidebar && this.caseLeftSidebar.selectedMarkerId;
+
+    // Left Button: "回传至 CASE 系统"
+    if (hasSelection) {
+      returnBtn.disabled = false;
+      returnBtn.style.opacity = '1';
+      returnBtn.style.background = '#22c55e'; // Highlight green when ready to return
+      returnBtn.style.color = 'white';
+      returnBtn.style.borderColor = '#22c55e';
+    } else {
+      returnBtn.disabled = true;
+      returnBtn.style.opacity = '0.5';
+      returnBtn.style.background = '#f8fafc';
+      returnBtn.style.color = '#64748b';
+      returnBtn.style.borderColor = '#e2e8f0';
+    }
+
+    // Right Button: "三维标记"
+    if (this.markerState === 1) {
+      startBtn.innerHTML = `标记中...`;
+      startBtn.disabled = true;
+      startBtn.style.opacity = '0.6';
+    } else {
+      startBtn.innerHTML = `<span style="font-size: 14px;">🖌️</span> 三维标记`;
+      startBtn.disabled = false;
+      startBtn.style.opacity = '1';
+      startBtn.style.background = '#0052d9';
     }
   }
 
@@ -430,7 +542,15 @@ export class ExternalCaseView {
 
     if (statusTag) {
       statusTag.className = `status-tag ${this.hasMarker ? 'has' : 'none'}`;
-      statusTag.textContent = this.hasMarker ? '● 已有标记数据' : '○ 暂无标记数据';
+      if (this.hasMarker && this.linkedMarkerId) {
+        statusTag.innerHTML = `<span style="color: #22c55e;">●</span> 已关联: ${this.linkedMarkerId}`;
+        statusTag.style.background = 'rgba(34, 197, 94, 0.05)';
+        statusTag.style.border = '1px solid rgba(34, 197, 94, 0.2)';
+      } else {
+        statusTag.textContent = this.hasMarker ? '● 已有标记数据' : '○ 暂无标记数据';
+        statusTag.style.background = '';
+        statusTag.style.border = '';
+      }
     }
 
     if (initiateBtn) {
@@ -446,6 +566,10 @@ export class ExternalCaseView {
   exitMarkerEntryMode() {
     this.markerState = 0;
     this.markerEntryActive = false;
+
+    // Reset viewLevel when leaving marker mode
+    if (window.app) window.app.viewLevel = 0;
+
     const entryView = this.container.querySelector('#marker-entry-view');
     const mainView = this.container.querySelector('#case-main-view');
     if (entryView) entryView.style.display = 'none';
@@ -463,14 +587,53 @@ export class ExternalCaseView {
 
   show() {
     this.isVisible = true;
+    this.interactionLocked = true; // Safety lock for entry signals
+    
     const view = this.container.querySelector('#external-case-container');
     if (view) view.style.display = 'block';
+
+    // Direct binding for L1 buttons to ensure absolute responsiveness
+    const initiateBtn = document.querySelector('#btn-initiate-marker');
+    if (initiateBtn) {
+      initiateBtn.onclick = (e) => {
+        if (this.interactionLocked) return;
+        this.showAircraftSelector();
+      };
+    }
+
+    const returnBtn = document.querySelector('#btn-return-to-app');
+    if (returnBtn) {
+      returnBtn.onclick = (e) => {
+        if (this.interactionLocked) return;
+        this.hide();
+        window.dispatchEvent(new CustomEvent('return-from-external'));
+      };
+    }
+
+    // Release interaction lock after a short delay
+    setTimeout(() => {
+      this.interactionLocked = false;
+    }, 200);
+
+    if (!this.markerEntryActive) this.markerState = 0;
+    
+    this.updateThemeUI();
+    this.updateMarkerButton();
   }
 
   hide() {
     this.isVisible = false;
     const view = this.container.querySelector('#external-case-container');
     if (view) view.style.display = 'none';
+
+    // Reset all popup states to prevent stale display on re-entry
+    const aircraftSelector = document.querySelector('#case-aircraft-selector');
+    if (aircraftSelector) aircraftSelector.style.display = 'none';
+    const deleteConfirm = document.querySelector('#case-delete-confirm');
+    if (deleteConfirm) deleteConfirm.style.display = 'none';
+    
+    // Reset selectedAircraft to prevent stale state
+    this.selectedAircraft = null;
   }
 
   addStyles() {
@@ -490,42 +653,75 @@ export class ExternalCaseView {
       .case-main-layout {
         width: 100%;
         height: 100%;
-        position: relative;
         display: flex;
-      }
-
-      .case-info-panel {
-        width: 320px;
-        height: 100%;
-        background: #ffffff;
-        border-left: 1px solid #e2e8f0;
-        padding: 24px;
-        margin-top: 60px;
-        box-shadow: -4px 0 12px rgba(0,0,0,0.02);
-        z-index: 1000;
+        position: relative;
+        background: #f1f5f9;
+        overflow: hidden;
       }
 
       .pdf-frame-wrapper {
         flex: 1;
         height: calc(100% - 60px);
         margin-top: 60px;
+        margin-right: 320px;
         background: #f1f5f9;
-        border-right: 1px solid #e2e8f0;
+        z-index: 1000;
+      }
+
+      .case-info-panel {
+        position: fixed;
+        right: 0;
+        top: 60px;
+        bottom: 0;
+        width: 320px;
+        background: #ffffff;
+        border-left: 1px solid #e2e8f0;
+        padding: 24px;
+        z-index: 20001;
+        display: flex;
+        flex-direction: column;
+        box-shadow: -4px 0 12px rgba(0,0,0,0.05);
       }
 
       .external-header {
-        position: absolute;
+        position: fixed;
         top: 0;
         left: 0;
         width: 100%;
         height: 60px;
         background: #1e293b;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0 24px;
+        z-index: 20002;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         color: white;
+      }
+
+      .external-header-actions {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        padding: 0 24px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        gap: 16px;
+      }
+
+      .btn-case-return {
+        background: rgba(56, 189, 248, 0.2);
+        border: 1px solid rgba(56, 189, 248, 0.4);
+        color: #38bdf8;
+        padding: 6px 14px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+      }
+
+      .btn-case-return:hover {
+        background: rgba(56, 189, 248, 0.3);
+        border-color: #38bdf8;
       }
 
       .external-logo {
@@ -700,7 +896,7 @@ export class ExternalCaseView {
         backdrop-filter: blur(16px);
         -webkit-backdrop-filter: blur(16px);
         border: 1px solid rgba(0, 82, 217, 0.2);
-        border-radius: 10px;
+        border-radius: 6px;
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
         pointer-events: none;
         transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1134,6 +1330,89 @@ export class ExternalCaseView {
         display: inline-flex;
         align-items: center;
         justify-content: center;
+      }
+
+      /* ========================================
+         Confirm Dialog Styles (Self-contained)
+         These are copied from SpatialView.js to
+         ensure CASE works without App.init()
+         ======================================== */
+      .confirm-dialog {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 320px;
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(24px) saturate(160%);
+        -webkit-backdrop-filter: blur(24px) saturate(160%);
+        border-radius: 8px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255,255,255,0.4);
+        z-index: 30000;
+        overflow: hidden;
+        animation: casePopupIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        display: flex;
+        flex-direction: column;
+      }
+
+      @keyframes casePopupIn {
+        from { opacity: 0; transform: translate(-50%, -45%) scale(0.9); }
+        to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+      }
+
+      .confirm-header {
+        padding: 20px 24px 12px;
+        font-size: 15px;
+        font-weight: 700;
+        color: #0f172a;
+        letter-spacing: -0.01em;
+      }
+
+      .confirm-footer {
+        padding: 16px 24px 24px;
+        display: flex;
+        gap: 12px;
+        background: rgba(248, 250, 252, 0.3);
+      }
+
+      .btn-confirm {
+        flex: 1;
+        padding: 10px 0;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid #e2e8f0;
+        background: #f1f5f9;
+        color: #64748b;
+      }
+
+      .btn-confirm.primary {
+        background: #0052d9;
+        color: white;
+        border: none;
+        box-shadow: 0 4px 12px rgba(0, 82, 217, 0.16);
+      }
+
+      .btn-confirm.primary:hover {
+        background: #0045b8;
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(0, 82, 217, 0.24);
+      }
+
+      .btn-confirm:not(.primary):hover {
+        background: #e2e8f0;
+        color: #1e293b;
+      }
+
+      .btn-confirm:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none !important;
       }
 
       /* Case Aircraft Selector Styles */

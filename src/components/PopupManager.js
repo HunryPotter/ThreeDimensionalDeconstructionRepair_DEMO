@@ -84,7 +84,7 @@ export class PopupManager {
   render() {
     const title = '零部件损伤标记信息';
     const mainRecord = this.data;
-    
+
     let name = '结构损伤区域';
     if (this.nodeContext && this.nodeContext.ataCode) {
       name = `ATA ${this.nodeContext.ataCode} ${this.nodeContext.label || ''}`.trim();
@@ -93,7 +93,7 @@ export class PopupManager {
     } else {
       name = mainRecord.title || name;
     }
-    
+
     const coords = mainRecord.coords ? `( ${mainRecord.coords.x.toFixed(1)}, ${mainRecord.coords.y.toFixed(1)}, 0.0 )` : '( 234.5, 120.3, 45.1 )';
 
     this.container.innerHTML = `
@@ -185,7 +185,7 @@ export class PopupManager {
     if (btnCr) {
       btnCr.addEventListener('click', () => {
         window.dispatchEvent(new CustomEvent('show-sidebar-detail', {
-          detail: { 
+          detail: {
             type: 'CR',
             markerData: this.data // Use current marker context
           }

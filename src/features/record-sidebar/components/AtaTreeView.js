@@ -42,7 +42,7 @@ export class AtaTreeView {
       const matchesSR = (() => {
         if (!srQuery) return true;
         const q = srQuery.toLowerCase();
-        return item.srRecords && item.srRecords.some(sr => 
+        return item.srRecords && item.srRecords.some(sr =>
           sr.id.toLowerCase().includes(q) || (sr.title && sr.title.toLowerCase().includes(q))
         );
       })();
@@ -51,8 +51,8 @@ export class AtaTreeView {
       const matchesCRS = (() => {
         if (!crsQuery) return true;
         const q = crsQuery.toLowerCase();
-        return item.srRecords && item.srRecords.some(sr => 
-          sr.crsRecords && sr.crsRecords.some(crs => 
+        return item.srRecords && item.srRecords.some(sr =>
+          sr.crsRecords && sr.crsRecords.some(crs =>
             crs.id.toLowerCase().includes(q) || (crs.title && crs.title.toLowerCase().includes(q))
           )
         );
@@ -72,20 +72,20 @@ export class AtaTreeView {
     const renderNode = (node, level = 0) => {
       const { ata: selectedAtas } = sidebar.activeFilters;
       const isAtaFiltered = selectedAtas && selectedAtas.length > 0 && !selectedAtas.includes('全部ATA');
-      
+
       const manualCollapsed = sidebar.collapsedAtaGroups?.has(node.code);
       const isExpanded = manualCollapsed ? false : true;
       const isSelected = sidebar.selectedTreeNodeId === node.code;
       const isChecked = !sidebar.uncheckedAtaNodes.has(node.code);
-      
+
       // Highlight if this specific node is targeted by the global filter
       const isFilteredMatch = isAtaFiltered && selectedAtas.includes(node.code);
 
       // Strong Isolation Logic:
       // If a filter is active, only show nodes that are on the path or are children of the target
       if (isAtaFiltered) {
-        const isOnPath = selectedAtas.some(filterAta => 
-           filterAta.startsWith(node.code) || node.code.startsWith(filterAta)
+        const isOnPath = selectedAtas.some(filterAta =>
+          filterAta.startsWith(node.code) || node.code.startsWith(filterAta)
         );
         if (!isOnPath) return '';
       }
@@ -93,12 +93,12 @@ export class AtaTreeView {
       // Get items belonging to this node (specifically or via prefix)
       const directItems = allFilteredItems.filter(item => item.ataCode === node.code);
       const recursiveItems = allFilteredItems.filter(item => item.ataCode.startsWith(node.code));
-      
+
       // In isolation mode, we might want to show empty chapters if they are part of the filtered path
-      if (!isAtaFiltered && recursiveItems.length === 0 && level > 0) return ''; 
+      if (!isAtaFiltered && recursiveItems.length === 0 && level > 0) return '';
 
       const hasChildren = node.children && node.children.length > 0;
-      const paddingLeft = level * 8; 
+      const paddingLeft = level * 8;
 
       return `
         <div class="ata-node-container ${hasChildren ? 'has-children' : ''} ${isExpanded ? 'expanded' : 'collapsed'} ${isFilteredMatch ? 'filtered-match' : ''}" style="margin-left: ${level > 0 ? 4 : 0}px;">
@@ -119,23 +119,23 @@ export class AtaTreeView {
             
             <div class="record-list">
               ${directItems.map(item => {
-                const isItemActive = sidebar.selectedMarkerId === item.id;
-                const isItemEditing = sidebar.editingId === item.id;
-                
-                let hasSr = false;
-                let hasCrs = false;
-                if (item.srRecords && item.srRecords.length > 0) {
-                  hasSr = true;
-                  hasCrs = item.srRecords.some(sr => sr.crsRecords && sr.crsRecords.length > 0);
-                }
+        const isItemActive = sidebar.selectedMarkerId === item.id;
+        const isItemEditing = sidebar.editingId === item.id;
 
-                return `
+        let hasSr = false;
+        let hasCrs = false;
+        if (item.srRecords && item.srRecords.length > 0) {
+          hasSr = true;
+          hasCrs = item.srRecords.some(sr => sr.crsRecords && sr.crsRecords.length > 0);
+        }
+
+        return `
                   <div class="record-item ${isItemActive ? 'selected' : ''} ${isItemEditing ? 'editing' : ''}" data-id="${item.id}">
                     <div class="record-info">
-                      ${item.isUserMarkup ? 
-                        `<span class="record-id" style="color: var(--primary-blue); font-weight: 600;">${item.title || '未命名损伤'}</span>` : 
-                        `<span class="record-id">${item.id}</span>`
-                      }
+                      ${item.isUserMarkup ?
+            `<span class="record-id" style="color: var(--primary-blue); font-weight: 600;">${item.title || '未命名损伤'}</span>` :
+            `<span class="record-id">${item.id}</span>`
+          }
                     </div>
                     <div class="record-actions">
                       <span class="status-icon sr ${hasSr ? 'active' : ''}" title="${hasSr ? '已开启维修申请 (SR)' : '未开启 SR'}">SR</span>
@@ -152,7 +152,7 @@ export class AtaTreeView {
                   </div>
                 `;
 
-              }).join('')}
+      }).join('')}
             </div>
           </div>
         </div>
@@ -257,8 +257,8 @@ export class AtaTreeView {
           sidebar.selectedTreeNodeId = nodeId;
           sidebar.selectedBranchId = nodeId;
           sidebar.selectedMarkerId = null; // Clear individual selection
-          window.dispatchEvent(new CustomEvent('ata-branch-select', { 
-            detail: { ataCode: nodeId, label: header.dataset.nodeLabel || '未知' } 
+          window.dispatchEvent(new CustomEvent('ata-branch-select', {
+            detail: { ataCode: nodeId, label: header.dataset.nodeLabel || '未知' }
           }));
         }
 
@@ -279,15 +279,20 @@ export class AtaTreeView {
         sidebar.selectedTreeNodeId = null; // Clear branch selection
         sidebar.selectedBranchId = null;
 
-        window.dispatchEvent(new CustomEvent('damage-marker-select', { detail: marker }));
-
         const target = e.target;
+        const deleteBtn = target.closest('.icon-delete');
+        
+        // If it's a delete action, don't show the detail popup
+        if (!deleteBtn) {
+          window.dispatchEvent(new CustomEvent('damage-marker-select', { detail: marker }));
+        }
+
         if (target.closest('.icon-pin')) {
           window.dispatchEvent(new CustomEvent('locate-spatial-marker', { detail: marker }));
         } else if (target.closest('.icon-edit')) {
           // Start edit mode for this marker
           window.dispatchEvent(new CustomEvent('edit-spatial-marker', { detail: marker }));
-        } else if (target.closest('.icon-delete')) {
+        } else if (deleteBtn) {
           const displayName = marker.title || id;
           window.dispatchEvent(new CustomEvent('request-confirm-dialog', {
             detail: {

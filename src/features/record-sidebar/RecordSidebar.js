@@ -19,6 +19,7 @@ export class RecordSidebar {
     this.view = options.initialView || 'selection'; // 'selection' or 'drilldown'
     this.context = options.context || 'app'; // 'app' or 'case'
     this.damageTypePanelVisible = false;
+    this.isAtaFilterExpanded = false; // Default collapsed for cleaner tree view
 
     // View Component Injection
     const DrillDownClass = options.drillDownViewClass || DrillDownView;
@@ -48,6 +49,7 @@ export class RecordSidebar {
       srQuery: '',
       crsQuery: ''
     };
+    this.dropdownSearchQuery = ''; // NEW: Temporary search query for open dropdown
 
     this.ataHierarchy = [
       {
@@ -219,7 +221,7 @@ export class RecordSidebar {
       const matchesSR = (() => {
         if (!srQuery) return true;
         const q = srQuery.toLowerCase();
-        return item.srRecords && item.srRecords.some(sr => 
+        return item.srRecords && item.srRecords.some(sr =>
           sr.id.toLowerCase().includes(q) || (sr.title && sr.title.toLowerCase().includes(q))
         );
       })();
@@ -228,8 +230,8 @@ export class RecordSidebar {
       const matchesCRS = (() => {
         if (!crsQuery) return true;
         const q = crsQuery.toLowerCase();
-        return item.srRecords && item.srRecords.some(sr => 
-          sr.crsRecords && sr.crsRecords.some(crs => 
+        return item.srRecords && item.srRecords.some(sr =>
+          sr.crsRecords && sr.crsRecords.some(crs =>
             crs.id.toLowerCase().includes(q) || (crs.title && crs.title.toLowerCase().includes(q))
           )
         );
@@ -265,9 +267,8 @@ export class RecordSidebar {
       const marker = this.markerData.find(m => m.id === id);
       if (marker) {
         window.dispatchEvent(new CustomEvent('damage-marker-select', { detail: marker }));
+        window.dispatchEvent(new CustomEvent('show-sidebar-detail', { detail: { markerData: marker, type: 'SR' } }));
       }
-
-      if (window.app) window.app.toggleRightPanel(true);
       this.render();
 
       setTimeout(() => {
@@ -283,17 +284,17 @@ export class RecordSidebar {
         if (this.activeFilters[key] !== undefined && JSON.stringify(this.activeFilters[key]) !== JSON.stringify(newData[key])) {
           this.activeFilters[key] = newData[key];
           changed = true;
-          
+
           // Auto-expand tree when ATA filter changes
           if (key === 'ata' && Array.isArray(newData[key])) {
-             newData[key].forEach(ataCode => {
-                if (ataCode !== '全部ATA') {
-                   const parts = ataCode.split('-');
-                   if (parts.length >= 1) this.collapsedAtaGroups.delete(parts[0]);
-                   if (parts.length >= 2) this.collapsedAtaGroups.delete(`${parts[0]}-${parts[1]}`);
-                   if (parts.length >= 3) this.collapsedAtaGroups.delete(ataCode);
-                }
-             });
+            newData[key].forEach(ataCode => {
+              if (ataCode !== '全部ATA') {
+                const parts = ataCode.split('-');
+                if (parts.length >= 1) this.collapsedAtaGroups.delete(parts[0]);
+                if (parts.length >= 2) this.collapsedAtaGroups.delete(`${parts[0]}-${parts[1]}`);
+                if (parts.length >= 3) this.collapsedAtaGroups.delete(ataCode);
+              }
+            });
           }
         }
       });
@@ -312,7 +313,7 @@ export class RecordSidebar {
       const targetNodeId = this.selectedTreeNodeId;
       const editingId = detail.editingId;
 
-      if (!targetNodeId && !editingId) {
+      if (!targetNodeId && !editingId && !this.selectedBranchId) {
         alert("请先在左侧选择一个ATA章节或分段");
         return;
       }
@@ -424,7 +425,25 @@ export class RecordSidebar {
         e.stopPropagation();
         const id = dd.dataset.id;
         this.openDropdownId = (this.openDropdownId === id) ? null : id;
+        this.dropdownSearchQuery = ''; // Reset search on open/close
         this.render();
+        
+        // Focus search if opened
+        if (this.openDropdownId === id) {
+          setTimeout(() => {
+            const searchInput = this.container.querySelector(`.dropdown-search-input[data-id="${id}"]`);
+            if (searchInput) searchInput.focus();
+          }, 0);
+        }
+      });
+    });
+
+    const searchInputs = this.container.querySelectorAll('.dropdown-search-input');
+    searchInputs.forEach(input => {
+      input.addEventListener('click', (e) => e.stopPropagation());
+      input.addEventListener('input', (e) => {
+        this.dropdownSearchQuery = e.target.value.toLowerCase();
+        this.renderSearchFilteredOptions(input.dataset.id);
       });
     });
 
@@ -468,11 +487,11 @@ export class RecordSidebar {
             };
             const col = (nodes, list) => nodes.forEach(n => { list.push(n.code); if (n.children) col(n.children, list); });
             const f = (nodes) => {
-               for(const n of nodes) {
-                  if(n.code === code) { if(n.children) col(n.children, children); return true; }
-                  if(n.children && f(n.children)) return true;
-               }
-               return false;
+              for (const n of nodes) {
+                if (n.code === code) { if (n.children) col(n.children, children); return true; }
+                if (n.children && f(n.children)) return true;
+              }
+              return false;
             }
             f(this.ataHierarchy);
             return children;
@@ -486,7 +505,7 @@ export class RecordSidebar {
           } else {
             currentAta = currentAta.filter(v => !targetCodes.includes(v));
           }
-          
+
           if (currentAta.length === 0) currentAta = ['全部ATA'];
           this.activeFilters.ata = currentAta;
         }
@@ -562,6 +581,10 @@ export class RecordSidebar {
       return this.renderAtaCascadingSelect(id, label, selectedValues);
     }
 
+    const filteredOptions = this.dropdownSearchQuery && isOpen
+      ? options.filter(opt => opt.label.toLowerCase().includes(this.dropdownSearchQuery))
+      : options;
+
     return `
         <div class="filter-row" style="position: relative; z-index: ${isOpen ? 2000 : 1};">
           <span class="label">${label}</span>
@@ -572,23 +595,64 @@ export class RecordSidebar {
             </div>
             ${isOpen ? `
             <div class="dropdown-list" style="position: absolute; top: calc(100% + 4px); right: 0; width: 100%; background: white; border: 1px solid #e2e8f0; border-radius: 6px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); z-index: 2000; max-height: 200px; overflow-y: auto;">
-              ${options.map(opt => `
+              <div class="dropdown-search-wrapper" style="position: sticky; top: 0; background: #fff; z-index: 10; padding: 4px; border-bottom: 1px solid #f1f1f1;">
+                <input type="text" 
+                       class="dropdown-search-input" 
+                       data-id="${id}" 
+                       placeholder="搜索..." 
+                       value="${this.dropdownSearchQuery}"
+                       style="width: 100%; box-sizing: border-box; padding: 4px 8px; font-size: 11px; border: 1px solid #e2e8f0; border-radius: 4px; outline: none; background: #f8fafc;">
+              </div>
+              ${filteredOptions.map(opt => `
                 <label style="display: flex; align-items: center; padding: 6px 12px; gap: 8px; cursor: pointer; font-size: 12px; margin: 0; transition: background 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
                   <input type="checkbox" class="multi-select-cb" data-dropdown="${id}" value="${opt.value}" ${selectedValues.includes(opt.value) ? 'checked' : ''} style="cursor: pointer; margin: 0;">
                   <span style="flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${opt.label}</span>
                 </label>
               `).join('')}
+              ${filteredOptions.length === 0 ? '<div style="padding: 10px; text-align: center; color: #94a3b8; font-size: 11px;">未找到匹配项</div>' : ''}
             </div>` : ''}
           </div>
         </div>
       `;
   }
 
+  // Refined helper to re-render dropdown options without full sidebar render
+  renderSearchFilteredOptions(dropdownId) {
+    this.render(); // Small enough project to full render for consistency, or we could target node.
+  }
+
   renderAtaCascadingSelect(id, label, selectedValues) {
     const isOpen = this.openDropdownId === id;
     const selectedText = selectedValues.includes('全部ATA') ? '全部ATA' : (selectedValues.length === 1 ? selectedValues[0] : `${selectedValues[0]}...`);
 
+    const getAllNodesFlat = (nodes) => {
+      let flat = [];
+      nodes.forEach(n => {
+        flat.push(n);
+        if (n.children) flat = flat.concat(getAllNodesFlat(n.children));
+      });
+      return flat;
+    };
+
     const renderLayer = (nodes) => {
+      // If searching, switch to flat-list mode for easier finding
+      if (this.dropdownSearchQuery && isOpen) {
+        const flatNodes = getAllNodesFlat(this.ataHierarchy).filter(n => n.label.toLowerCase().includes(this.dropdownSearchQuery));
+        return `
+          <div class="ata-flat-search-list">
+            ${flatNodes.map(node => `
+              <div class="ata-cascade-item">
+                <label style="display: flex; align-items: center; padding: 8px 12px; gap: 10px; cursor: pointer;">
+                   <input type="checkbox" class="multi-select-cb" data-dropdown="${id}" value="${node.code}" ${selectedValues.includes(node.code) ? 'checked' : ''}>
+                   <span style="font-size: 11px; color: #334155;">${node.label}</span>
+                </label>
+              </div>
+            `).join('')}
+            ${flatNodes.length === 0 ? '<div style="padding: 10px; text-align: center; color: #94a3b8; font-size: 11px;">未找到匹配章节</div>' : ''}
+          </div>
+        `;
+      }
+
       return `
         <div class="ata-cascade-menu" style="min-width: 180px;">
           ${nodes.map(node => {
@@ -625,6 +689,14 @@ export class RecordSidebar {
           </div>
           ${isOpen ? `
           <div class="dropdown-list ata-cascade-container" style="position: absolute; top: calc(100% + 4px); left: 0; background: white; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.15); z-index: 2000; padding: 4px 0;">
+            <div class="dropdown-search-wrapper" style="padding: 4px; border-bottom: 1px solid #f1f1f1; background: #fff; position: sticky; top: 0; z-index: 10;">
+              <input type="text" 
+                     class="dropdown-search-input" 
+                     data-id="${id}" 
+                     placeholder="快速搜查找章节..." 
+                     value="${this.dropdownSearchQuery}"
+                     style="width: 100%; box-sizing: border-box; padding: 4px 8px; font-size: 11px; border: 1px solid #e2e8f0; border-radius: 4px; outline: none; background: #f8fafc;">
+            </div>
             <label style="display: flex; align-items: center; padding: 10px 14px; gap: 10px; cursor: pointer; font-size: 11.5px; border-bottom: 1px solid #f1f5f9; background: #f8fafc; color: #1e293b;">
               <input type="checkbox" class="multi-select-cb" data-dropdown="${id}" value="全部ATA" ${selectedValues.includes('全部ATA') ? 'checked' : ''} style="margin: 0;">
               <span style="font-weight: 600;">全部 ATA 章节</span>

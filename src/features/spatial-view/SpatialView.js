@@ -11,6 +11,7 @@ export class SpatialView {
     this.currentTab = 'SR'; // Track active tab for visibility logic
     this.defaultDateRange = { start: '2026-01-01', end: '2026-04-01' }; // Store for reset
     this.dateRange = { ...this.defaultDateRange }; // Initialize default date range
+    this.selectedMarkerId = null; // Decoupled selection state for global association
     this.addStyles(); // Inject styles once
     this.render();
   }
@@ -159,9 +160,13 @@ export class SpatialView {
         <!-- Aircraft Selection Dialog for 3D Marking -->
         <div id="aircraft-selection-popup" class="confirm-dialog secondary-dialog" style="display: none; min-width: 320px;">
           <div class="confirm-header">关联架次选择</div>
-          <div class="confirm-body" style="background: #f8fafc; padding: 16px;">
-            <p style="font-size: 12px; color: #64748b; margin-bottom: 12px; font-weight: 500;">请选择受此损伤标记关联的架次（支持多选）：</p>
-            <div id="aircraft-multiselect-list" style="max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
+          <div class="confirm-body" style="background: white; padding: 12px 18px 18px; display: flex; flex-direction: column; gap: 8px;">
+            <p style="font-size: 11px; color: #94a3b8; margin: 0; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">受影响架次选择</p>
+            <div class="ac-search-wrapper" style="position: relative;">
+               <input type="text" id="ac-selection-search" placeholder="输入架次关键字..." 
+                      style="width: 100%; padding: 6px 10px; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 12px; outline: none; background: #f8fafc; box-sizing: border-box; transition: all 0.2s;">
+            </div>
+            <div id="aircraft-multiselect-list" style="max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; margin-top: 4px;">
               <!-- Dynamic List -->
             </div>
           </div>
@@ -247,6 +252,17 @@ export class SpatialView {
       const action = isChecked ? '显示' : '隐藏';
       const label = id === 'C919' ? 'C919' : `结构部段 ${id}`;
       this.showBanner(`已${action} ${label} 关联数模参照系`, 2000);
+    });
+
+    // Handle Selection State Synchronization (Decoupled from window.app)
+    window.addEventListener('damage-marker-select', (e) => {
+      this.selectedMarkerId = e.detail.id;
+      this.renderMarkers(this.markers); // Refresh markers to show highlight
+    });
+
+    window.addEventListener('damage-marker-reverse-select', (e) => {
+      this.selectedMarkerId = e.detail.id;
+      this.renderMarkers(this.markers);
     });
 
     window.addEventListener('request-confirm-dialog', (e) => {
@@ -391,7 +407,7 @@ export class SpatialView {
         data.records.forEach((rec, index) => {
           const isUserMarkup = rec.isUserMarkup;
           const subMarker = document.createElement('div');
-          const isSelected = rec.id === window.app?.leftSidebar?.selectedMarkerId;
+          const isSelected = rec.id === this.selectedMarkerId;
           subMarker.className = `hotspot sub-marker spatial-marker-dot ${isUserMarkup ? 'marker-user' : 'marker-existing'} ${isSelected ? 'selected' : ''}`;
           subMarker.dataset.id = rec.id;
 
@@ -422,8 +438,8 @@ export class SpatialView {
       const mainMarker = document.createElement('div');
       let markerTypeClass = 'marker-new';
       if (data.isExisting) {
-         const hasUserMarkup = data.records.some(r => r.isUserMarkup);
-         markerTypeClass = hasUserMarkup && data.records.length === 1 ? 'marker-user' : 'marker-existing';
+        const hasUserMarkup = data.records.some(r => r.isUserMarkup);
+        markerTypeClass = hasUserMarkup && data.records.length === 1 ? 'marker-user' : 'marker-existing';
       }
       mainMarker.className = `hotspot main-marker ${markerTypeClass} ${data.isSelected ? 'selected' : ''}`;
 
@@ -444,7 +460,7 @@ export class SpatialView {
       mainMarker.addEventListener('click', (e) => {
         e.stopPropagation();
         window.dispatchEvent(new CustomEvent('site-click', { detail: data }));
-        
+
         // Default behavior: show bubble for the first record at site
         const firstRec = data.isExisting ? data.records[0] : { id: data.id };
         window.dispatchEvent(new CustomEvent('damage-marker-select', {
@@ -632,14 +648,14 @@ export class SpatialView {
       const confirmHeader = confirmPopup.querySelector('.confirm-header');
       const markupInput = confirmPopup.querySelector('#markup-name-input');
       const btnConfirmYes = confirmPopup.querySelector('#btn-confirm-yes');
-      
+
       if (this.drawingModeType === 'local-component') {
         inputGroup.style.display = 'flex';
         confirmHeader.textContent = this.editingMarkerId ? '重新定位并编辑标记' : '新增三维零部件标记';
         btnConfirmYes.textContent = '确认保存';
         if (markupInput) {
-           markupInput.value = this.editingInitialTitle || '';
-           setTimeout(() => markupInput.focus(), 50);
+          markupInput.value = this.editingInitialTitle || '';
+          setTimeout(() => markupInput.focus(), 50);
         }
       } else {
         inputGroup.style.display = 'none';
@@ -653,7 +669,7 @@ export class SpatialView {
       const simZ = (Math.random() * 50).toFixed(1);
       coordDisplay.textContent = `( ${simX}, ${simY}, ${simZ} )`;
       this.currentMarkupCoords = { x, y };
-      
+
       confirmPopup.style.display = 'block';
       this.hideBanner(); // Hide guidance when confirming
     });
@@ -690,14 +706,15 @@ export class SpatialView {
       if (this.drawingModeType === 'local-component') {
         const nameInput = this.container.querySelector('#markup-name-input');
         const nameVal = nameInput ? (nameInput.value.trim() || '自定义零部件标记') : '自定义零部件标记';
-        
+
         window.dispatchEvent(new CustomEvent('save-user-markup', {
-           detail: {
-             title: nameVal,
-             x: this.currentMarkupCoords?.x || 50,
-             y: this.currentMarkupCoords?.y || 50,
-             editingId: this.editingMarkerId
-           }
+          detail: {
+            title: nameVal,
+            x: this.currentMarkupCoords?.x || 50,
+            y: this.currentMarkupCoords?.y || 50,
+            ataCode: this.ataChapterCode, // Ensure the target chapter is passed
+            editingId: this.editingMarkerId
+          }
         }));
         this.editingMarkerId = null;
         this.editingInitialTitle = '';
@@ -721,7 +738,7 @@ export class SpatialView {
       const canvasContainer = this.container.querySelector('#canvas-container');
       if (canvasContainer) canvasContainer.classList.add('drilldown-active');
       this.resetSpatialFilters();
-      
+
       // Make timeline visible immediately via CSS (drilldown-active class).
       // Do NOT call renderTimeline with empty array here — that would wipe existing
       // timeline dots. The 'records-updated' event (fired by RecordSidebar.dispatchDataUpdate)
@@ -758,19 +775,22 @@ export class SpatialView {
     // Bidirectional Selection Sync: Listen for selections from Sidebar or 3D scene
     ['sr-reverse-select', 'sr-select', 'crs-select', 'damage-marker-select', 'damage-marker-reverse-select'].forEach(evtName => {
       window.addEventListener(evtName, (e) => {
-        const sidebar = window.app?.leftSidebar;
+        // Update local selection state first
+        if (e.detail && e.detail.id) {
+          this.selectedMarkerId = e.detail.id;
+        }
 
-        // Highlight timeline markers based on ALL active selection IDs
+        // Highlight timeline markers based on local selection ID
         this.container.querySelectorAll('.timeline-record-marker').forEach(m => {
           const id = m.dataset.id;
-          const isSelected = (id === sidebar?.selectedMarkerId);
+          const isSelected = (id === this.selectedMarkerId);
           m.classList.toggle('selected', isSelected);
         });
 
         // Highlight 3D sub-markers as well
         this.container.querySelectorAll('.sub-marker').forEach(sm => {
           const id = sm.dataset.id;
-          const isSelected = (id === sidebar?.selectedMarkerId);
+          const isSelected = (id === this.selectedMarkerId);
           sm.classList.toggle('selected', isSelected);
         });
       });
@@ -961,10 +981,10 @@ export class SpatialView {
     // Create a smooth curve that "searches" for the point
     const controlX = targetX * 0.4;
     const d = `M ${startX} ${startY} Q ${controlX} ${startY}, ${targetX} ${targetY}`;
-    
+
     path.setAttribute('d', d);
     path.style.display = 'block';
-    
+
     // Use total length for dash animation
     const pathLength = path.getTotalLength() || 1000;
     path.style.strokeDasharray = pathLength;
@@ -1001,30 +1021,53 @@ export class SpatialView {
   showAircraftSelectionDialog(list, context) {
     const popup = this.container.querySelector('#aircraft-selection-popup');
     const listContainer = this.container.querySelector('#aircraft-multiselect-list');
+    const searchInput = this.container.querySelector('#ac-selection-search');
     const confirmBtn = this.container.querySelector('#btn-aircraft-confirm');
     const cancelBtn = this.container.querySelector('#btn-aircraft-cancel');
-    
+
     if (!popup || !listContainer) return;
 
-    // Render list
-    listContainer.innerHTML = list.map(ac => `
-      <label style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: white; border-radius: 8px; border: 1px solid #e2e8f0; cursor: pointer; transition: all 0.2s;">
-        <input type="checkbox" class="ac-select-cb" value="${ac.msn}|${ac.registration}" checked style="width: 16px; height: 16px;">
-        <div style="display: flex; flex-direction: column;">
-          <span style="font-size: 13px; font-weight: 600; color: #1e293b;">${ac.registration}</span>
-          <span style="font-size: 11px; color: #94a3b8;">MSN: ${ac.msn} | ${ac.airline}</span>
-        </div>
-      </label>
-    `).join('');
+    // Reset search input
+    if (searchInput) searchInput.value = '';
 
+    const renderItems = (filter = '') => {
+      const filtered = list.filter(ac => 
+        ac.registration.toLowerCase().includes(filter.toLowerCase()) ||
+        ac.msn.toLowerCase().includes(filter.toLowerCase()) ||
+        ac.airline.toLowerCase().includes(filter.toLowerCase())
+      );
+
+      listContainer.innerHTML = filtered.map(ac => `
+        <label class="ac-select-item" style="display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 4px; cursor: pointer; transition: all 0.15s; border: 1px solid transparent;">
+          <input type="checkbox" class="ac-select-cb" value="${ac.msn}|${ac.registration}" style="width: 14px; height: 14px; cursor: pointer; accent-color: #0052d9;">
+          <div style="display: flex; align-items: baseline; gap: 8px; flex: 1; min-width: 0;">
+            <span style="font-size: 12px; font-weight: 700; color: #1e293b;">${ac.registration}</span>
+            <span style="font-size: 10px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">MSN: ${ac.msn} | ${ac.airline}</span>
+          </div>
+        </label>
+      `).join('');
+
+      if (filtered.length === 0) {
+        listContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: #94a3b8; font-size: 12px;">未找到匹配架次</div>';
+      }
+    };
+
+    renderItems();
     popup.style.display = 'block';
+    if (searchInput) {
+      setTimeout(() => searchInput.focus(), 50);
+    }
+
+    const handleSearch = (e) => {
+      renderItems(e.target.value);
+    };
 
     const handleConfirm = () => {
       const selected = Array.from(listContainer.querySelectorAll('.ac-select-cb:checked')).map(cb => {
         const [msn, registration] = cb.value.split('|');
         return { msn, registration };
       });
-      
+
       if (selected.length === 0) {
         alert('请至少选择一个关联架次');
         return;
@@ -1032,13 +1075,12 @@ export class SpatialView {
 
       popup.style.display = 'none';
       cleanup();
-      
-      // Proceed to marking mode with selected aircraft combined into context
-      window.dispatchEvent(new CustomEvent('enter-drawing-mode', { 
-        detail: { 
+
+      window.dispatchEvent(new CustomEvent('enter-drawing-mode', {
+        detail: {
           ...context,
-          associatedAircraft: selected 
-        } 
+          associatedAircraft: selected
+        }
       }));
     };
 
@@ -1050,10 +1092,12 @@ export class SpatialView {
     const cleanup = () => {
       confirmBtn.removeEventListener('click', handleConfirm);
       cancelBtn.removeEventListener('click', handleCancel);
+      if (searchInput) searchInput.removeEventListener('input', handleSearch);
     };
 
     confirmBtn.addEventListener('click', handleConfirm);
     cancelBtn.addEventListener('click', handleCancel);
+    if (searchInput) searchInput.addEventListener('input', handleSearch);
   }
 
   renderTimeline(tab, records) {
@@ -1114,8 +1158,7 @@ export class SpatialView {
       `;
 
       // Auto-highlight if already selected
-      const sidebar = window.app?.leftSidebar;
-      const isSelected = (record.id === sidebar?.selectedMarkerId);
+      const isSelected = (record.id === this.selectedMarkerId);
 
       if (isSelected) {
         marker.classList.add('selected');
@@ -1123,7 +1166,7 @@ export class SpatialView {
 
       marker.addEventListener('click', (e) => {
         e.stopPropagation();
-        
+
         // Trigger individual popup and update internal selection state
         window.dispatchEvent(new CustomEvent('damage-marker-select', {
           detail: record
@@ -1147,7 +1190,7 @@ export class SpatialView {
       for (let i = 0; i <= numSteps; i++) {
         const date = new Date(startTs + range * (i / numSteps));
         const pos = (i / numSteps) * 100;
-        
+
         const tickWrap = document.createElement('div');
         tickWrap.className = 'axis-tick-wrap';
         tickWrap.style.left = `calc(40px + (100% - 80px) * ${pos / 100})`;
@@ -1160,10 +1203,10 @@ export class SpatialView {
     } else {
       const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
       const startD = new Date(startTs);
-      
+
       // Improve: Iterate exactly through month starts visible in the range
       let d = new Date(startD.getFullYear(), startD.getMonth(), 1);
-      
+
       while (d.getTime() <= endTs) {
         const monthStartTs = d.getTime();
         const pos = ((monthStartTs - startTs) / range) * 100;
@@ -1198,7 +1241,7 @@ export class SpatialView {
     if (banner) {
       banner.querySelector('.banner-text').textContent = text;
       banner.style.display = 'flex';
-      
+
       if (duration) {
         if (this._bannerTimeout) clearTimeout(this._bannerTimeout);
         this._bannerTimeout = setTimeout(() => {
@@ -1301,7 +1344,7 @@ export class SpatialView {
     const renderCrumb = (key, selected) => {
       const label = formatLabel(key, selected);
       const keyLabel = key === 'type' ? '型别' : key === 'airline' ? '航司' : key === 'msn' ? 'MSN号' : key === 'ata' ? 'ATA章节' : key === 'partNo' ? '件号' : '注册号';
-      
+
       if (key === 'partNo') {
         return `
           <div class="crumb-container" data-key="${key}">
@@ -1331,14 +1374,14 @@ export class SpatialView {
             </div>
             <div class="dropdown-options-list" style="max-height: 200px; overflow-y: auto;">
               ${options[key].map(opt => {
-                const checked = selected.includes(opt);
-                return `
+        const checked = selected.includes(opt);
+        return `
                   <div class="dropdown-item ${checked ? 'active' : ''}" data-value="${opt}">
                     <input type="checkbox" ${checked ? 'checked' : ''} onclick="event.stopPropagation()">
                     <span class="item-label">${opt}</span>
                   </div>
                 `;
-              }).join('')}
+      }).join('')}
             </div>
           </div>
         </div>
@@ -1371,17 +1414,17 @@ export class SpatialView {
         e.stopPropagation();
         const key = btn.dataset.key;
         const allValue = key === 'type' ? '全部型别' : key === 'airline' ? '全部航司' : key === 'msn' ? '全部MSN' : key === 'ata' ? '全部ATA' : '全部注册号';
-        
+
         if (key === 'partNo') {
           filters.partNo = '';
         } else {
           filters[key] = [allValue];
         }
-        
+
         window.dispatchEvent(new CustomEvent('filter-change', {
           detail: filters
         }));
-        
+
         this.updateBreadcrumbs(filters);
       });
     });
@@ -1393,7 +1436,7 @@ export class SpatialView {
         const key = item.closest('.crumb-container').dataset.key;
         const val = item.dataset.value;
         const allValue = key === 'type' ? '全部型别' : key === 'airline' ? '全部航司' : key === 'msn' ? '全部MSN' : key === 'ata' ? '全部ATA' : '全部注册号';
-        
+
         let selected = [...filters[key]];
         if (val === allValue) {
           selected = [allValue];
@@ -1407,7 +1450,7 @@ export class SpatialView {
             selected.push(val);
           }
         }
-        
+
         filters[key] = selected;
         window.dispatchEvent(new CustomEvent('filter-change', {
           detail: filters
@@ -1974,7 +2017,7 @@ export class SpatialView {
         background: rgba(255, 255, 255, 0.95);
         backdrop-filter: blur(24px);
         -webkit-backdrop-filter: blur(24px);
-        border-radius: 10px;
+        border-radius: 6px;
         box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12);
         border: 1px solid rgba(255, 255, 255, 0.5);
         padding: 6px 0;
@@ -2396,11 +2439,12 @@ export class SpatialView {
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
+        margin-left: -400px;
         width: 320px;
         background: rgba(255, 255, 255, 0.72);
         backdrop-filter: blur(24px) saturate(160%);
         -webkit-backdrop-filter: blur(24px) saturate(160%);
-        border-radius: 16px;
+        border-radius: 8px;
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255,255,255,0.4);
         z-index: 2500;
         overflow: hidden;
@@ -2453,7 +2497,7 @@ export class SpatialView {
         padding: 10px 12px;
         background: rgba(248, 250, 252, 0.8);
         border: 1px solid #e2e8f0;
-        border-radius: 10px;
+        border-radius: 6px;
         font-family: inherit;
         font-size: 13px;
         color: #0f172a;
@@ -2470,7 +2514,7 @@ export class SpatialView {
       .coord-info {
         background: rgba(241, 245, 249, 0.5);
         padding: 12px 16px;
-        border-radius: 10px;
+        border-radius: 6px;
         border: 1px dashed rgba(0, 0, 0, 0.05);
       }
 
@@ -2494,6 +2538,34 @@ export class SpatialView {
         font-weight: 600;
       }
 
+      .ac-select-item:hover {
+        background: #f1f5f9;
+        color: #0052d9;
+      }
+      
+      .ac-select-item:has(input:checked) {
+        background: rgba(0, 82, 217, 0.05);
+        border-color: rgba(0, 82, 217, 0.1) !important;
+      }
+
+      .btn-cancel {
+        background: #f1f5f9;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
+        cursor: pointer;
+        transition: all 0.2s;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        padding: 10px;
+        flex: 1;
+      }
+      
+      .btn-cancel:hover {
+        background: #e2e8f0;
+        color: #0f172a;
+      }
+
       .confirm-footer {
         padding: 16px 24px 24px;
         display: flex;
@@ -2504,7 +2576,7 @@ export class SpatialView {
       .btn-confirm {
         flex: 1;
         padding: 10px 0;
-        border-radius: 10px;
+        border-radius: 6px;
         font-size: 13px;
         font-weight: 600;
         cursor: pointer;
@@ -2567,7 +2639,7 @@ export class SpatialView {
         backdrop-filter: blur(25px) saturate(180%);
         -webkit-backdrop-filter: blur(25px) saturate(180%);
         border: 1px solid rgba(255, 255, 255, 0.5);
-        border-radius: 16px;
+        border-radius: 8px;
         z-index: 2500;
         box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
         animation: popupScale 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -2661,7 +2733,7 @@ export class SpatialView {
         padding: 10px 12px 10px 38px;
         background: #f8fafc;
         border: 1px solid #e2e8f0;
-        border-radius: 10px;
+        border-radius: 6px;
         font-family: 'Inter', sans-serif;
         font-size: 13px;
         color: #334155;
@@ -2733,7 +2805,7 @@ export class SpatialView {
       .btn-reset-calendar, .btn-apply-calendar {
         flex: 1;
         padding: 12px;
-        border-radius: 10px;
+        border-radius: 6px;
         font-size: 14px;
         font-weight: 600;
         cursor: pointer;
