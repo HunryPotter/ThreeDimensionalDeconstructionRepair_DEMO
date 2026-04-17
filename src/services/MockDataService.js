@@ -169,13 +169,18 @@ export const MockDataService = {
             const site = spatialSites[Math.floor(Math.random() * spatialSites.length)];
             const branches = ['G20', 'G40', 'G50', '通用分段'];
             const subBranch = branches[Math.floor(Math.random() * branches.length)];
+            
+            const damageType = damageTypes[Math.floor(Math.random() * damageTypes.length)];
+            const fh = Math.floor(5000 + Math.random() * 15000);
+            const fc = Math.floor(fh / (1.2 + Math.random() * 0.5));
 
             markerData.push({
               id: markerId,
               registration: registration,
               msn: msn,
               title: `${ata.label} (${ata.code}) 记录`,
-              typeLabels: [damageTypes[Math.floor(Math.random() * damageTypes.length)]],
+              descriptiveTitle: `${ata.label}位置发现 1 处${damageType}损伤`,
+              typeLabels: [damageType],
               aircraftType: type,
               airline: airline,
               ataCode: ata.code,
@@ -186,7 +191,23 @@ export const MockDataService = {
               coords: { x: site.x, y: site.y },
               date: srRecords[0].date,
               srRecords: srRecords,
-              crRecords: sharedCrPool[chapterCode] || []
+              crRecords: sharedCrPool[chapterCode] || [],
+              // New Technical Detail Payload (for Right Sidebar only)
+              techDetail: {
+                ata: ata.code,
+                partNo: `${ata.code.replace(/-/g, '')}-P-${Math.floor(100 + Math.random() * 900)}`,
+                aircraftModel: `C919-${type === '高原型' ? 'PLATEAU' : 'STD'}`,
+                registration: registration,
+                msn: msn,
+                fh: `${fh}.5`,
+                fc: `${fc}`,
+                isMainStruct: Math.random() > 0.3 ? '是' : '否',
+                isKeyStruct: Math.random() > 0.6 ? '是' : '否',
+                material: Math.random() > 0.5 ? '2024-T3 铝合金' : '7075-T6 铝合金',
+                damageType: '', // Placeholder, will be synced from typeLabels in view
+                damageDesc: `在 ${ata.label} 位置发现的结构性损伤，初步判断为${srRecords[0].title.split(' ')[1] || '待评估损伤'}。`,
+                reportDate: srRecords[0].date
+              }
             });
           }
         }

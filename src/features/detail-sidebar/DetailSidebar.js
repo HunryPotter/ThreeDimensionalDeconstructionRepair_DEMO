@@ -2,9 +2,10 @@ export class DetailSidebar {
   constructor(container) {
     this.container = container;
     this.markerData = null;
-    this.selectedSrId = null;
-    this.activeInnerTab = 'SR';
-    this.addStyles(); // Inject styles once during initialization
+    this.viewMode = 'DAMAGE'; // DAMAGE, SR, CRS, CR
+    this.selectedId = null;   // SR/CRS ID
+    this.targetSrId = null;
+    this.addStyles();
     this.render();
     this.initEvents();
   }
@@ -12,62 +13,74 @@ export class DetailSidebar {
   initEvents() {
     window.addEventListener('damage-marker-select', (e) => {
       this.markerData = e.detail;
-      const { forceTab, targetSrId } = e.detail;
-
-      if (this.markerData && this.markerData.srRecords && this.markerData.srRecords.length > 0) {
-        // Use forced SR or default to first
-        this.selectedSrId = targetSrId || this.markerData.srRecords[0].id;
-        // Use forced tab or default to SR
-        this.activeInnerTab = forceTab || 'SR';
-      } else {
-        this.selectedSrId = null;
-      }
+      this.viewMode = 'DAMAGE';
+      this.selectedId = null;
+      
+      this.expandSidebar();
       this.render();
     });
 
-    // Remote activation of specific views (e.g. from 3D Popups)
-    window.addEventListener('show-sidebar-detail', (e) => {
-      if (e.detail.type === 'CR') {
-        if (e.detail.markerData) {
-          this.markerData = e.detail.markerData;
-        }
-        this.activeInnerTab = 'CR';
-        if (window.app) window.app.toggleRightPanel(true);
+    window.addEventListener('show-sr-detail', (e) => {
+      if (e.detail.markerData) this.markerData = e.detail.markerData;
+      this.viewMode = 'SR';
+      this.selectedId = e.detail.id;
+      
+      this.expandSidebar();
+      this.render();
+    });
+
+    window.addEventListener('show-crs-detail', (e) => {
+      if (e.detail.markerData) this.markerData = e.detail.markerData;
+      this.viewMode = 'CRS';
+      this.selectedId = e.detail.id;
+      this.targetSrId = e.detail.parentSrId;
+      
+      this.expandSidebar();
+      this.render();
+    });
+
+    window.addEventListener('show-cr-detail', (e) => {
+      if (e.detail.markerData) this.markerData = e.detail.markerData;
+      this.viewMode = 'CR';
+      
+      this.expandSidebar();
+      this.render();
+    });
+
+    window.addEventListener('sync-sidebar-context', (e) => {
+      if (e.detail.markerData) {
+        this.markerData = e.detail.markerData;
         this.render();
       }
     });
 
-    // Handle context synchronization when switching ATA branches in the tree
-    window.addEventListener('sync-sidebar-context', (e) => {
-      if (e.detail.markerData) {
-        this.markerData = e.detail.markerData;
-        // Only trigger an immediate re-render if the user is already looking at CR info
-        if (this.activeInnerTab === 'CR') {
-          this.render();
-        }
+    window.addEventListener('show-sidebar-detail', (e) => {
+      if (e.detail.type === 'CR') {
+        if (e.detail.markerData) this.markerData = e.detail.markerData;
+        this.viewMode = 'CR';
+        this.expandSidebar();
+        this.render();
       }
     });
+  }
+
+  expandSidebar() {
+    if (window.app) {
+      window.app.toggleRightPanel(true);
+    } else if (this.container.closest('.external-view')) {
+      const entryView = this.container.closest('#marker-entry-view');
+      if (entryView) entryView.classList.remove('right-collapsed');
+    }
   }
 
   render() {
     this.renderMarkerView();
 
-    // Condition: Only show toggle handle if app is in Level 2
     const handle = this.container.querySelector('#btn-right-sidebar-toggle');
     if (handle) {
       const isLevel2 = window.app && window.app.viewLevel === 2;
       handle.style.display = isLevel2 ? 'flex' : 'none';
-      if (!isLevel2) {
-        // Ensure panel is collapsed visually if we're in Level 1
-        if (window.app) window.app.toggleRightPanel(false);
-      }
-    }
-
-    const closeBtn = this.container.querySelector('.btn-close-right');
-    if (closeBtn) {
-      closeBtn.addEventListener('click', () => {
-        if (window.app) window.app.toggleRightPanel(false);
-      });
+      if (!isLevel2 && window.app) window.app.toggleRightPanel(false);
     }
   }
 
@@ -76,140 +89,40 @@ export class DetailSidebar {
       id: 'N/A',
       title: '未选中记录',
       typeLabels: ['未知'],
-      aircraftType: '--',
-      airline: '--',
       srRecords: [],
       crRecords: []
     };
 
-    // Find currently selected SR
-    const selectedSr = data.srRecords.find(sr => sr.id === this.selectedSrId) || (data.srRecords.length > 0 ? data.srRecords[0] : null);
-    
-    // Tab availability rules:
-    // 1. SR tab: Always available if SRs exist
-    // 2. CRS tab: Only if selected SR has CRS AND status is not 'none'
-    const hasSr = !!selectedSr;
-    const hasCrs = hasSr && selectedSr.manualStatus !== 'none' && selectedSr.crsRecords && selectedSr.crsRecords.length > 0;
-    const hasCr = data.crRecords && data.crRecords.length > 0; // CR is now a top-level component association
+    let boardContent = '';
+    let headerLabel = '单据详情';
+    let headerId = data.id;
 
-    // Validate active tab and force back to SR if current tab becomes invalid
-    if (this.activeInnerTab === 'CRS' && !hasCrs) this.activeInnerTab = 'SR';
-    if (this.activeInnerTab === 'CR' && !hasCr) {
-       // Only force back if we weren't explicitly told to show CR
-       this.activeInnerTab = 'SR';
-    }
+    switch (this.viewMode) {
+      case 'DAMAGE':
+        headerLabel = '损伤记录详情';
+        boardContent = this.renderTechnicalDetailBoard(data);
+        break;
+      
+      case 'SR':
+        headerLabel = 'SR 维修申请';
+        const sr = data.srRecords.find(s => s.id === this.selectedId) || (data.srRecords[0]);
+        headerId = sr?.id || 'N/A';
+        boardContent = this.renderSrBoard(sr, data);
+        break;
 
-    const damageTypeBadge = data.typeLabels ? data.typeLabels.join(' & ') : '未知损伤';
+      case 'CRS':
+        headerLabel = 'CRS 修理方案';
+        const parentSr = data.srRecords.find(s => s.id === this.targetSrId) || (data.srRecords && data.srRecords[0]);
+        const crs = parentSr?.crsRecords?.find(c => c.id === this.selectedId) || (parentSr?.crsRecords && parentSr?.crsRecords[0]);
+        headerId = crs?.id || 'N/A';
+        boardContent = this.renderCrsBoard(crs, parentSr);
+        break;
 
-    // Context-aware Header Titles
-    const typeMap = {
-      'SR': 'SR 技术请求',
-      'CRS': 'CRS 修理方案',
-      'CR': 'CR 让步信息'
-    };
-    const currentTypeLabel = typeMap[this.activeInnerTab] || '单据详情';
-    const currentId = (this.activeInnerTab === 'CR') ? '综合评估' : (this.activeInnerTab === 'SR' ? (selectedSr?.id || 'N/A') : (selectedSr?.crsRecords[0]?.id || 'N/A'));
-
-    let contentHtml = '';
-
-    if (this.activeInnerTab === 'SR' && hasSr) {
-      contentHtml = `
-        <div class="tab-pane active" id="pane-sr">
-          <section class="info-section">
-            <h4 class="section-title">SR 基础信息</h4>
-            <div class="info-grid">
-              <div class="info-row"><span class="label">SR 编号:</span><span class="value highlight">${selectedSr.id}</span></div>
-              <div class="info-row"><span class="label">机型:</span><span class="value">C919 (${data.aircraftType})</span></div>
-              <div class="info-row"><span class="label">优先级:</span><span class="value status-red">Critical</span></div>
-              <div class="info-row"><span class="label">客户:</span><span class="value">${data.airline}</span></div>
-            </div>
-          </section>
-          
-          <section class="info-section" style="margin-top: 24px;">
-            <h4 class="section-title">问题信息</h4>
-            <div class="problem-box">
-              <div class="box-label">问题标题</div>
-              <div class="box-title">${selectedSr.title}</div>
-              <div class="box-label" style="margin-top: 12px;">问题详情</div>
-              <div class="box-text">
-                根据现场维护报告，在 ${data.ataLabel} 捕获到损伤。日期: ${selectedSr.date}。<br><br>
-                请工程部门根据三维模型定位确认该损伤编号下的具体损伤参数，并评估其对气动外形及结构完整性的影响。
-              </div>
-            </div>
-          </section>
-        </div>
-      `;
-    } else if (this.activeInnerTab === 'CRS' && hasCrs) {
-      const isPublished = selectedSr.manualStatus === 'published';
-      contentHtml = `
-        <div class="tab-pane active" id="pane-crs">
-          ${selectedSr.crsRecords.map(crs => `
-            <!-- CRS Basic Info -->
-            <section class="info-section" style="margin-bottom: 24px;">
-              <h4 class="section-title">CRS基本信息</h4>
-              <div class="info-grid">
-                <div class="info-row"><span class="label">CRS编号:</span><span class="value highlight">${crs.id}</span></div>
-                <div class="info-row"><span class="label">状态:</span><span class="value status-green" style="font-weight: 600;">${crs.status}</span></div>
-                <div class="info-row"><span class="label">超手册状态:</span><span class="value">${selectedSr.manualStatus === 'published' ? '已发布' : '待处理'}</span></div>
-                <div class="info-row"><span class="label">版本:</span><span class="value">${crs.version || 'A'}</span></div>
-                <div class="info-block">
-                  <span class="label">CRS名称:</span>
-                  <span class="value semi-bold multiline">${crs.title}</span>
-                </div>
-                <div class="info-row"><span class="label">关联SR:</span><span class="value highlight sm">${selectedSr.id}</span></div>
-              </div>
-            </section>
-            
-            ${isPublished ? `
-              <!-- Damage Component Info -->
-              <section class="info-section">
-                <h4 class="section-title">损伤详情</h4>
-                <div class="info-grid">
-                  <div class="info-row"><span class="label">SRM号:</span><span class="value">${crs.srmId || '--'}</span></div>
-                  <div class="info-row"><span class="label">损伤分类:</span><span class="value status-red bold">${crs.damageType || damageTypeBadge}</span></div>
-                  <div class="info-block" style="margin-top: 8px;">
-                    <span class="label">关联零组件:</span>
-                    <div class="part-list">
-                      ${(crs.partNos || []).map(p => `
-                        <div class="part-item">
-                          <span class="part-no">${p}</span>
-                          <button class="btn-outline-view">查看3D定位</button>
-                        </div>
-                      `).join('')}
-                    </div>
-                  </div>
-                </div>
-              </section>
-            ` : `
-              <div class="problem-box sm" style="text-align: center; border-style: dashed; padding: 20px;">
-                <div class="box-text muted italic">—— 详细工程方案信息待发布 ——</div>
-              </div>
-            `}
-          `).join('')}
-        </div>
-      `;
-    } else if (this.activeInnerTab === 'CR' && hasCr) {
-      contentHtml = `
-        <div class="tab-pane active" id="pane-cr">
-          <div style="background: rgba(22, 163, 74, 0.05); padding: 12px; border-radius: 8px; margin-bottom: 20px; border: 1px solid rgba(22, 163, 74, 0.1);">
-            <div style="font-size: 11px; color: #16a34a; font-weight: 600;">[共享资源] 该零部件关联的纠正性评估结论</div>
-          </div>
-          ${data.crRecords.map(cr => `
-            <section class="info-section" style="margin-bottom: 24px;">
-              <div class="info-grid">
-                 <div class="info-row"><span class="label">CR 编号:</span><span class="value highlight">${cr.id}</span></div>
-                 <div class="info-row"><span class="label">状态:</span><span class="value status-green" style="font-weight: 600;">${cr.status || '处理中'}</span></div>
-                 <div class="info-row"><span class="label">评估结论:</span><span class="value semi-bold">${cr.title}</span></div>
-              </div>
-              <div class="problem-box sm" style="margin-top: 10px;">
-                ${cr.customerImpact || '暂无描述信息'}
-              </div>
-            </section>
-          `).join('')}
-        </div>
-      `;
-    } else {
-      contentHtml = '<div class="problem-box sm"><div class="box-text muted italic">暂无关联的单据信息 (或当前流程未进入评估阶段)</div></div>';
+      case 'CR':
+        headerLabel = 'CR 让步评估';
+        headerId = '综合结论';
+        boardContent = this.renderCrBoard(data);
+        break;
     }
 
     this.container.innerHTML = `
@@ -217,49 +130,187 @@ export class DetailSidebar {
         <div class="sidebar-header">
           <div class="header-left">
             <button class="btn-close-right">×</button>
-            <strong class="header-title"><span class="header-type-tag">[${currentTypeLabel}]</span> ${currentId}</strong>
+            <strong class="header-title"><span class="header-type-tag">[${headerLabel}]</span> ${headerId}</strong>
           </div>
-          <span class="case-tag clickable" onclick="window.dispatchEvent(new CustomEvent('initiate-technical-request'))" title="在流程系统中查看完整关联信息">CASE系统</span>
+          <div class="header-actions">
+            <span class="case-tag clickable" onclick="window.dispatchEvent(new CustomEvent('initiate-technical-request'))">CASE系统</span>
+          </div>
         </div>
         
-        <div class="details-content" style="padding: 16px;">
-          <!-- Damage Summary Info (Content Layer) -->
-          <div class="damage-summary" style="margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px dashed rgba(0,0,0,0.08);">
-            <div style="font-size: 11px; color: var(--text-color-secondary); margin-bottom: 4px; display: flex; align-items: center; gap: 8px;">
-              <span style="background: rgba(239, 68, 68, 0.1); color: #ef4444; padding: 2px 6px; border-radius: 4px; font-weight: 600;">损伤类型：${damageTypeBadge}</span>
-              <span style="background: rgba(0, 82, 217, 0.1); color: #0052d9; padding: 2px 6px; border-radius: 4px; font-weight: 600;">ATA 章节：${data.ataLabel || '--'}</span>
+        <div class="details-content">
+          ${(this.viewMode !== 'DAMAGE' && this.viewMode !== 'CR') ? `
+            <div class="back-nav-area">
+              <button class="btn-back-to-damage">
+                <span class="arrow">←</span> 损伤记录详情
+              </button>
             </div>
-            <div style="font-size: 13px; color: var(--text-color-main); font-weight: 600; line-height: 1.4;">${data.title || '无标题记录'}</div>
-          </div>
-  
-           <div class="tab-content">
-             ${contentHtml}
-           </div>
+          ` : ''}
+          ${boardContent}
         </div>
 
-        <!-- Panel Toggle Bookmark (Left Edge, Middle) -->
-        <button class="btn-toggle-handle" id="btn-right-sidebar-toggle" title="隐藏/显示面板">
+        <button class="btn-toggle-handle" id="btn-right-sidebar-toggle">
           <span class="handle-icon">▶</span>
         </button>
       </div>
     `;
 
-    // Removed tab event listeners as per redesign
+    this.attachInternalEvents();
+  }
 
+  attachInternalEvents() {
     const closeBtn = this.container.querySelector('.btn-close-right');
-    if (closeBtn) {
-      closeBtn.addEventListener('click', () => {
-        if (window.app) window.app.toggleRightPanel(false);
+    if (closeBtn) closeBtn.addEventListener('click', () => window.app && window.app.toggleRightPanel(false));
+
+    const toggleBtn = this.container.querySelector('#btn-right-sidebar-toggle');
+    if (toggleBtn) toggleBtn.addEventListener('click', (e) => { e.stopPropagation(); window.app && window.app.toggleRightPanel(); });
+
+    const backBtn = this.container.querySelector('.btn-back-to-damage');
+    if (backBtn) {
+      backBtn.addEventListener('click', () => {
+        this.viewMode = 'DAMAGE';
+        this.selectedId = null;
+        
+        // Notify MarkerPopup to clear its selection state
+        window.dispatchEvent(new CustomEvent('clear-marker-popup-selection'));
+        
+        this.render();
       });
+    }
+  }
+
+  renderSrBoard(sr, markerData) {
+    if (!sr) return `<div class="problem-box sm italic">未找到关联 SR</div>`;
+    return `
+      <div class="board-wrapper fadeIn">
+        <section class="info-section">
+          <h4 class="section-title">SR 基础信息</h4>
+          <div class="info-grid">
+            <div class="info-row"><span class="label">SR 编号:</span><span class="value highlight">${sr.id}</span></div>
+            <div class="info-row"><span class="label">当前优先级:</span><span class="value status-red">Critical</span></div>
+            <div class="info-row"><span class="label">报告日期:</span><span class="value">${sr.date}</span></div>
+          </div>
+        </section>
+        
+        <section class="info-section">
+          <h4 class="section-title">问题描述</h4>
+          <div class="problem-box">
+            <div class="box-title">${sr.title}</div>
+            <div class="box-text" style="margin-top:10px;">
+              针对在 ${markerData.ataLabel || '指定位置'} 发现的损伤，现场维护人员已提交初始报告。
+              请工程部门结合 3D 模型确认损伤几何参数并出具修理方案。
+            </div>
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
+  renderCrsBoard(crs, sr) {
+    if (!crs) return `<div class="problem-box sm italic">未找到关联 CRS</div>`;
+    return `
+      <div class="board-wrapper fadeIn">
+        <section class="info-section">
+          <h4 class="section-title">CRS 方案详情</h4>
+          <div class="info-grid">
+            <div class="info-row"><span class="label">CRS 编号:</span><span class="value highlight">${crs.id}</span></div>
+            <div class="info-row"><span class="label">审批状态:</span><span class="value status-green">${crs.status}</span></div>
+            <div class="info-row"><span class="label">版本:</span><span class="value">${crs.version || 'Rev. A'}</span></div>
+          </div>
+        </section>
+
+        <section class="info-section">
+          <h4 class="section-title">工程评估</h4>
+          <div class="problem-box">
+             <div class="box-title">${crs.title}</div>
+             <div class="box-text" style="margin-top:10px;">
+               ${crs.damageType ? `损伤分类已被核实为: <b>${crs.damageType}</b><br><br>` : ''}
+               修理措施涉及在受影响区域加装补丁块或进行打磨处理。具体操作步骤已载入 PDF 手册并关联至本系统。
+             </div>
+          </div>
+        </section>
+
+        <section class="info-section">
+          <h4 class="section-title">关联文档</h4>
+          <div class="file-card">
+            <div class="file-icon">📄</div>
+            <div class="file-info">
+              <span class="file-name">Repair_Scheme_${crs.id}.pdf</span>
+              <span class="file-meta">5.4 MB | 工程发布版</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
+  renderCrBoard(data) {
+    if (!data.crRecords || data.crRecords.length === 0) return `<div class="problem-box sm italic">暂无 CR 让步评估信息</div>`;
+    return `
+      <div class="board-wrapper fadeIn">
+        <div style="background: rgba(22, 163, 74, 0.05); padding: 12px; border-radius: 8px; margin-bottom: 20px; border: 1px solid rgba(22, 163, 74, 0.1);">
+          <div style="font-size: 11px; color: #16a34a; font-weight: 600;">[共享资源] 该零部件关联的纠正性评估结论</div>
+        </div>
+        ${data.crRecords.map(cr => `
+          <section class="info-section">
+            <div class="info-grid">
+              <div class="info-row"><span class="label">CR 编号:</span><span class="value highlight">${cr.id}</span></div>
+              <div class="info-row"><span class="label">状态:</span><span class="value status-green">${cr.status}</span></div>
+              <div class="info-row"><span class="label">结论:</span><span class="value semi-bold">${cr.title}</span></div>
+            </div>
+            <div class="problem-box sm" style="margin-top:10px;">${cr.customerImpact}</div>
+          </section>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  renderTechnicalDetailBoard(data) {
+    if (!data || data.id === 'N/A') {
+      return `
+        <div class="tech-detail-board empty">
+          <div class="empty-msg">请选择一条损伤记录以查看详细技术参数</div>
+        </div>
+      `;
     }
 
-    const toggleHandle = this.container.querySelector('#btn-right-sidebar-toggle');
-    if (toggleHandle) {
-      toggleHandle.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (window.app) window.app.toggleRightPanel(); // Toggle current state
-      });
-    }
+    const tech = data.techDetail || {};
+    const damageType = data.typeLabels ? data.typeLabels[0] : '--';
+
+    const fields = [
+      { label: 'ATA', value: tech.ata || data.ataCode || '--' },
+      { label: '件号', value: tech.partNo || '--', highlight: true },
+      { label: '飞机型号', value: tech.aircraftModel || data.aircraftType || '--' },
+      { label: '飞机注册号', value: tech.registration || data.registration || '--' },
+      { label: '序列号MSN', value: tech.msn || data.msn || '--' },
+      { label: 'FH', value: tech.fh || '--' },
+      { label: 'FC', value: tech.fc || '--' },
+      { label: '主要结构', value: tech.isMainStruct || '--' },
+      { label: '关键结构', value: tech.isKeyStruct || '--' },
+      { label: '构件材料', value: tech.material || '--' },
+      { label: '损伤类型', value: damageType, status: true },
+      { label: '损伤报告日期', value: tech.reportDate || data.date || '--' }
+    ];
+
+    return `
+      <section class="tech-detail-board fadeIn">
+        <div class="board-header">
+          <div class="board-title">损伤记录详细信息</div>
+          <div class="board-badge">LIVE DATA</div>
+        </div>
+        <div class="tech-grid">
+          ${fields.map(f => `
+            <div class="tech-item">
+              <div class="tech-label">${f.label}</div>
+              <div class="tech-value ${f.highlight ? 'highlight' : ''} ${f.label === '损伤类型' ? 'type-badge' : ''}">${f.value}</div>
+            </div>
+          `).join('')}
+          <div class="tech-item full-width">
+            <div class="tech-label">损伤简述</div>
+            <div class="tech-value desc-text">${tech.damageDesc || '暂无详细描述'}</div>
+          </div>
+        </div>
+      </section>
+    `;
   }
 
   addStyles() {
@@ -288,7 +339,6 @@ export class DetailSidebar {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       }
 
-      /* 核心修复：收起时平滑隐藏内部内容，并增加位移以同步面板回缩 */
       .right-panel-region .sidebar-container > *:not(.btn-toggle-handle) {
         transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1), 
                     transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), 
@@ -310,7 +360,6 @@ export class DetailSidebar {
         backdrop-filter: none;
       }
 
-      /* 右侧手柄定位隔离 */
       .right-panel-region .btn-toggle-handle {
         position: absolute;
         left: -20px;
@@ -336,8 +385,8 @@ export class DetailSidebar {
       .right-panel-region .btn-toggle-handle:hover {
         width: 28px;
         left: -28px;
-        background: var(--primary-blue);
-        border-color: var(--primary-blue);
+        background: #0052d9;
+        border-color: #0052d9;
         box-shadow: -8px 0 20px rgba(0, 82, 217, 0.3);
       }
 
@@ -354,10 +403,9 @@ export class DetailSidebar {
 
       .right-collapsed .right-panel-region .btn-toggle-handle .handle-icon {
         transform: scaleY(1.2) rotate(180deg);
-        color: var(--primary-blue);
+        color: #0052d9;
       }
 
-      /* Original Inner Styles ... */
       .sidebar-header {
         padding: 16px;
         border-bottom: 1px solid rgba(0,0,0,0.05);
@@ -377,7 +425,7 @@ export class DetailSidebar {
         background: none;
         border: none;
         cursor: pointer;
-        color: var(--text-color-secondary);
+        color: #64748b;
         font-size: 20px;
         padding: 0 4px;
         line-height: 1;
@@ -385,12 +433,12 @@ export class DetailSidebar {
       }
 
       .btn-close-right:hover {
-        color: var(--primary-blue);
+        color: #0052d9;
       }
 
       .header-title {
         font-size: 14px;
-        color: var(--text-color-main);
+        color: #1e293b;
         font-weight: 600;
         letter-spacing: 0.2px;
         display: flex;
@@ -399,16 +447,52 @@ export class DetailSidebar {
       }
       .header-type-tag {
         font-size: 11px;
-        color: var(--primary-blue);
+        color: #0052d9;
         font-weight: 800;
         background: rgba(0, 82, 217, 0.05);
         padding: 2px 6px;
         border-radius: 4px;
       }
       
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .btn-back-to-damage {
+        background: transparent;
+        border: none;
+        color: #64748b;
+        padding: 4px 0;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .btn-back-to-damage:hover {
+        color: #0052d9;
+        transform: translateX(-2px);
+      }
+
+      .btn-back-to-damage .arrow {
+        font-size: 13px;
+        line-height: 1;
+      }
+
+      .back-nav-area {
+        padding-bottom: 12px;
+        border-bottom: 1px dashed rgba(0,0,0,0.05);
+        margin-bottom: 4px;
+      }
+
       .case-tag {
         background: #e6f0ff;
-        color: var(--primary-blue);
+        color: #0052d9;
         padding: 3px 8px;
         border-radius: 4px;
         font-size: 11px;
@@ -421,16 +505,11 @@ export class DetailSidebar {
       }
 
       .case-tag.clickable:hover {
-        background: var(--primary-blue);
+        background: #0052d9;
         color: white;
         box-shadow: 0 2px 8px rgba(0, 82, 217, 0.2);
       }
 
-      .tag-green {
-        background: #f0fdf4;
-        color: #16a34a;
-      }
-      
       .details-content {
         flex: 1;
         overflow-y: auto;
@@ -440,6 +519,21 @@ export class DetailSidebar {
         gap: 16px;
       }
       
+      .board-wrapper {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .fadeIn {
+        animation: fadeIn 0.3s ease-out;
+      }
+
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
       .info-section {
         display: flex;
         flex-direction: column;
@@ -449,54 +543,13 @@ export class DetailSidebar {
       .section-title {
         margin: 0;
         font-size: 13px;
-        color: var(--text-color-main);
+        color: #1e293b;
         font-weight: 600;
-        border-left: 3px solid var(--primary-blue);
+        border-left: 3px solid #0052d9;
         padding-left: 10px;
         letter-spacing: 0.3px;
       }
-      
-      .inner-tabs {
-        display: flex;
-        background: rgba(0, 0, 0, 0.04);
-        border-radius: 6px;
-        padding: 3px;
-        margin-bottom: 2px;
-        border: 1px solid rgba(0, 0, 0, 0.05);
-      }
-      
-      .inner-tab {
-        flex: 1;
-        text-align: center;
-        padding: 6px 0;
-        font-size: 11px;
-        font-weight: 600;
-        color: var(--text-color-secondary);
-        border-radius: 4px;
-        cursor: pointer;
-        transition: all 0.2s;
-        user-select: none;
-      }
-      
-      .inner-tab:hover:not(.disabled):not(.active) {
-        background: rgba(255, 255, 255, 0.5);
-      }
-      
-      .inner-tab.active {
-        background: #ffffff;
-        color: var(--primary-blue);
-        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-      }
-      
-      .inner-tab.disabled {
-        opacity: 0.4;
-        cursor: not-allowed;
-      }
-      
-      .status-green {
-        color: #16a34a;
-      }
-      
+
       .info-grid {
         display: flex;
         flex-direction: column;
@@ -510,155 +563,46 @@ export class DetailSidebar {
         line-height: 1.4;
       }
 
-      .info-block {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        font-size: 12px;
-      }
-
-      .info-flex {
-        display: flex;
-        gap: 24px;
-        flex-wrap: wrap;
-      }
-
-      .divider {
-        border-bottom: 1px solid var(--border-color-light);
-        padding-bottom: 12px;
-        margin-bottom: 4px;
-      }
-      
       .label {
-        color: var(--text-color-secondary);
+        color: #64748b;
         width: 100px;
         flex-shrink: 0;
-        font-weight: 400;
-      }
-
-      .label.auto {
-        width: auto;
-        margin-right: 8px;
       }
       
       .value {
-        color: var(--text-color-main);
-        word-break: break-word;
+        color: #1e293b;
+        word-break: break-all;
       }
 
       .value.highlight {
-        color: var(--primary-blue);
+        color: #0052d9;
         font-weight: 600;
       }
 
-      .value.muted {
-        color: var(--text-color-secondary);
-      }
+      .status-red { color: #ef4444; }
+      .status-green { color: #16a34a; }
 
-      .value.sm {
-        font-size: 11px;
-      }
-
-      .value.bold {
-        font-weight: 600;
-      }
-
-      .value.semi-bold {
-        font-weight: 500;
-      }
-
-      .value.multiline {
-        line-height: 1.6;
-      }
-      
-      .status-red {
-        color: #ef4444;
-      }
-      
       .problem-box {
         background: #f8fafc;
         border: 1px solid #e2e8f0;
         padding: 12px;
         border-radius: 8px;
         line-height: 1.6;
-        color: var(--text-color-main);
+        color: #1e293b;
+        font-size: 12.5px;
       }
 
-      .problem-box.sm {
-        font-size: 11.5px;
-      }
-
-      .box-label {
-        font-size: 11px;
-        color: var(--text-color-secondary);
-        margin-bottom: 6px;
-        font-weight: 500;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-      }
+      .problem-box.sm { font-size: 11.5px; }
 
       .box-title {
-        font-size: 12.5px;
-        font-weight: 600;
-        color: var(--text-color-main);
+        font-size: 13px;
+        font-weight: 700;
+        color: #1e293b;
       }
 
       .box-text {
         font-size: 12px;
-        color: var(--text-color-secondary);
-      }
-
-      .box-text.italic {
-        font-style: italic;
-        opacity: 0.8;
-      }
-
-      .muted {
-        color: var(--text-color-muted);
-      }
-
-      .part-list {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-
-      .part-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        background: rgba(0, 0, 0, 0.03);
-        padding: 6px 10px;
-        border-radius: 6px;
-        transition: background 0.2s;
-      }
-
-      .part-item:hover {
-        background: rgba(0, 0, 0, 0.05);
-      }
-
-      .part-no {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-        font-size: 11px;
-        color: var(--text-color-main);
-        font-weight: 500;
-      }
-
-      .btn-outline-view {
-        font-size: 10px;
-        padding: 3px 10px;
-        border: 1px solid var(--primary-blue);
-        color: var(--primary-blue);
-        background: transparent;
-        border-radius: 4px;
-        cursor: pointer;
-        font-weight: 500;
-        transition: all 0.2s;
-      }
-
-      .btn-outline-view:hover {
-        background: var(--primary-blue);
-        color: white;
+        color: #475569;
       }
 
       .file-card {
@@ -669,75 +613,80 @@ export class DetailSidebar {
         padding: 14px;
         border-radius: 10px;
         border: 1px dashed #bfdbfe;
-        transition: transform 0.2s, background 0.2s;
         cursor: pointer;
       }
 
-      .file-card:hover {
-        background: #e6f0ff;
-        transform: translateY(-1px);
-      }
-
-      .file-icon {
-        font-size: 24px;
-      }
-
-      .file-info {
-        display: flex;
-        flex-direction: column;
-        gap: 3px;
-      }
-
-      .file-name {
-        font-size: 12.5px;
-        color: var(--primary-blue);
-        font-weight: 600;
-        text-decoration: underline;
-      }
-
-      .file-meta {
-        font-size: 11px;
-        color: var(--text-color-muted);
-      }
-
-      /* SR Selector Styles */
-      .sr-selector-box {
-        background: rgba(0, 82, 217, 0.05);
-        border: 1px solid rgba(0, 82, 217, 0.1);
-        border-radius: 8px;
-        padding: 10px;
-        margin-bottom: 12px;
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-      }
-
-      .sr-selector-box label {
-        font-size: 11px;
-        color: var(--text-color-secondary);
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-      }
-
-      .tech-select {
-        width: 100%;
-        background: white;
+      .tech-detail-board {
+        background: #ffffff;
         border: 1px solid #e2e8f0;
-        border-radius: 6px;
-        padding: 6px 10px;
-        font-size: 12px;
-        color: var(--text-color-main);
-        font-weight: 500;
-        outline: none;
-        cursor: pointer;
-        transition: border-color 0.2s;
+        border-radius: 10px;
+        padding: 14px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
       }
 
-      .tech-select:focus {
-        border-color: var(--primary-blue);
-        box-shadow: 0 0 0 2px rgba(0, 82, 217, 0.1);
+      .board-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #f1f5f9;
       }
+
+      .board-title {
+        font-size: 12px;
+        font-weight: 700;
+        color: #1e293b;
+        text-transform: uppercase;
+      }
+
+      .board-badge {
+        font-size: 9px;
+        background: #f0f9ff;
+        color: #0369a1;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-weight: 800;
+        border: 1px solid #e0f2fe;
+      }
+
+      .tech-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px 16px;
+      }
+
+      .tech-item {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .tech-item.full-width {
+        grid-column: span 2;
+        border-top: 1px dashed #f1f5f9;
+        padding-top: 8px;
+        margin-top: 4px;
+      }
+
+      .tech-label {
+        font-size: 11px;
+        color: #64748b;
+      }
+
+      .tech-value {
+        font-size: 12.5px;
+        color: #1e293b;
+        font-weight: 600;
+      }
+
+      .tech-value.highlight {
+        color: #0052d9;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+
+      .tech-value.type-badge { color: #ef4444; }
+      .desc-text { color: #475569; font-size: 12px; line-height: 1.5; }
     `;
     document.head.appendChild(style);
   }

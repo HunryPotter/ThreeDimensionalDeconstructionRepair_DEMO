@@ -1031,7 +1031,7 @@ export class SpatialView {
     if (searchInput) searchInput.value = '';
 
     const renderItems = (filter = '') => {
-      const filtered = list.filter(ac => 
+      const filtered = list.filter(ac =>
         ac.registration.toLowerCase().includes(filter.toLowerCase()) ||
         ac.msn.toLowerCase().includes(filter.toLowerCase()) ||
         ac.airline.toLowerCase().includes(filter.toLowerCase())

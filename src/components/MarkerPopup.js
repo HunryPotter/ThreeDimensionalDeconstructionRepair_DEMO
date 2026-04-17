@@ -24,12 +24,20 @@ export class MarkerPopup {
         this.hide();
       }
     });
+
+    window.addEventListener('clear-marker-popup-selection', () => {
+      this.selectedId = null;
+      if (this.isVisible) {
+        this.render();
+        this.initEvents(); // Ensure buttons remain clickable after selection reset
+      }
+    });
   }
 
   show(markerData) {
     this.data = markerData;
     this.isVisible = true;
-    
+
     if (!this.selectedId) {
       if (this.data.srRecords?.length > 0) {
         this.selectedId = this.data.srRecords[0].id;
@@ -63,7 +71,7 @@ export class MarkerPopup {
 
     const coords = m.coords ? `X: ${m.coords.x.toFixed(1)} / Y: ${m.coords.y.toFixed(1)} / Z: 0.0` : '--';
     const typeLabel = (m.typeLabels || []).join(' & ') || '未知损伤';
-    
+
     this.container.innerHTML = `
       <div class="m-popup-header">
         <div class="m-popup-id-badge">
@@ -151,16 +159,19 @@ export class MarkerPopup {
         this.render();
         this.initEvents();
 
-        // Trigger sidebar highlight and tab switch, while forcing it open
+        // Expand sidebar first
         if (window.app) window.app.toggleRightPanel(true);
-        window.dispatchEvent(new CustomEvent('damage-marker-select', { 
-           detail: {
-             ...this.data,
-             forceTab: type,
-             targetSrId: type === 'SR' ? id : parentSrId,
-             targetCrsId: type === 'CRS' ? id : null
-           }
-        }));
+
+        // Dispatch specific board event
+        if (type === 'SR') {
+          window.dispatchEvent(new CustomEvent('show-sr-detail', {
+            detail: { id, markerData: this.data }
+          }));
+        } else if (type === 'CRS') {
+          window.dispatchEvent(new CustomEvent('show-crs-detail', {
+            detail: { id, parentSrId, markerData: this.data }
+          }));
+        }
       });
     });
 

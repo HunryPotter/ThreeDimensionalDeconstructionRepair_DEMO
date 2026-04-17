@@ -357,17 +357,21 @@ export class ExternalCaseView {
         this.caseMarkerPopup.show(e.detail);
         this.casePopupManager.hide();
         this.updateMarkerButton();
+      });
 
-        // If user clicked a portal button (SR/CRS view detail), open right sidebar
-        if (e.detail.forceTab) {
-          if (this.caseRightSidebar) {
-            this.caseRightSidebar.markerData = e.detail;
-            this.caseRightSidebar.activeInnerTab = e.detail.forceTab;
-            if (e.detail.targetSrId) this.caseRightSidebar.selectedSrId = e.detail.targetSrId;
-            this.caseRightSidebar.render();
-          }
-          this.toggleRightPanel(true);
-        }
+      window.addEventListener('show-sr-detail', (e) => {
+        if (!this.markerEntryActive) return;
+        this.toggleRightPanel(true);
+      });
+
+      window.addEventListener('show-crs-detail', (e) => {
+        if (!this.markerEntryActive) return;
+        this.toggleRightPanel(true);
+      });
+
+      window.addEventListener('show-cr-detail', (e) => {
+        if (!this.markerEntryActive) return;
+        this.toggleRightPanel(true);
       });
 
       window.addEventListener('site-click', (e) => {
@@ -392,18 +396,6 @@ export class ExternalCaseView {
           }
           this.updateMarkerButton();
         }
-      });
-
-      // Fix: DetailSidebar calls window.app.toggleRightPanel() which operates on app-container.
-      // Intercept show-sidebar-detail here to call the CASE-specific right panel toggle instead.
-      window.addEventListener('show-sidebar-detail', (e) => {
-        if (!this.markerEntryActive) return;
-        if (this.caseRightSidebar) {
-          this.caseRightSidebar.markerData = e.detail.markerData;
-          this.caseRightSidebar.activeInnerTab = e.detail.type || 'SR';
-          this.caseRightSidebar.render();
-        }
-        this.toggleRightPanel(true);
       });
 
       // Fix: CaseDrillDownView.syncButtonState() dispatches this event.

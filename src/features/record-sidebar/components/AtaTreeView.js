@@ -130,7 +130,9 @@ export class AtaTreeView {
         }
 
         return `
-                  <div class="record-item ${isItemActive ? 'selected' : ''} ${isItemEditing ? 'editing' : ''}" data-id="${item.id}">
+                  <div class="record-item ${isItemActive ? 'selected' : ''} ${isItemEditing ? 'editing' : ''}" 
+                       data-id="${item.id}" 
+                       data-tooltip="${item.descriptiveTitle || ''}">
                     <div class="record-info">
                       ${item.isUserMarkup ?
             `<span class="record-id" style="color: var(--primary-blue); font-weight: 600;">${item.title || '未命名损伤'}</span>` :
@@ -269,7 +271,45 @@ export class AtaTreeView {
     // Individual Record Items
     const records = sidebar.container.querySelectorAll('.record-item');
     records.forEach(item => {
+      // Tooltip handling
+      item.addEventListener('mouseenter', (e) => {
+        const text = item.dataset.tooltip;
+        const id = item.dataset.id;
+        if (!text) return;
+
+        let tooltip = document.querySelector('.ata-tree-tooltip');
+        if (!tooltip) {
+          tooltip = document.createElement('div');
+          tooltip.className = 'ata-tree-tooltip';
+          document.body.appendChild(tooltip);
+        }
+
+        tooltip.innerHTML = `<div class="tooltip-body"><span style="color: var(--primary-blue); margin-right: 6px; font-family: 'JetBrains Mono'; opacity: 0.8;">[${id}]</span>${text}</div>`;
+        tooltip.classList.add('visible');
+
+        const updatePos = (p) => {
+          tooltip.style.left = `${p.clientX + 15}px`;
+          tooltip.style.top = `${p.clientY + 15}px`;
+        };
+
+        updatePos(e);
+        item._onMove = updatePos;
+        item.addEventListener('mousemove', updatePos);
+      });
+
+      item.addEventListener('mouseleave', () => {
+        const tooltip = document.querySelector('.ata-tree-tooltip');
+        if (tooltip) {
+          tooltip.classList.remove('visible');
+        }
+        item.removeEventListener('mousemove', item._onMove);
+      });
+
       item.addEventListener('click', (e) => {
+        // Hide tooltip on click to prevent it sticking around during sidebar transitions
+        const tooltip = document.querySelector('.ata-tree-tooltip');
+        if (tooltip) tooltip.classList.remove('visible');
+
         e.stopPropagation();
         const id = item.dataset.id;
         const marker = sidebar.markerData.find(m => m.id === id);
@@ -281,7 +321,7 @@ export class AtaTreeView {
 
         const target = e.target;
         const deleteBtn = target.closest('.icon-delete');
-        
+
         // If it's a delete action, don't show the detail popup
         if (!deleteBtn) {
           window.dispatchEvent(new CustomEvent('damage-marker-select', { detail: marker }));
